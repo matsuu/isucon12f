@@ -125,8 +125,8 @@ func connectDB(batch bool) (*sqlx.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	dbx.SetMaxOpenConns(140)
-	dbx.SetMaxIdleConns(140)
+	dbx.SetMaxOpenConns(550)
+	dbx.SetMaxIdleConns(550)
 	return dbx, nil
 }
 
@@ -503,39 +503,12 @@ func (h *Handler) obtainItem(tx *sqlx.Tx, userID, itemID int64, itemType int, ob
 		if _, err := tx.Exec(query, obtainAmount, userID); err != nil {
 			return nil, nil, nil, err
 		}
-		obtainCoins = append(obtainCoins, obtainAmount)
 
 	case 2: // card(ハンマー)
-		query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-		item := new(ItemMaster)
-		if err := tx.Get(item, query, itemID, itemType); err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil, nil, ErrItemNotFound
-			}
+		query := "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) SELECT ?, id, amount_per_sec, 1, 0, ?, ? FROM item_masters WHERE id=? AND item_type=?"
+		if _, err := tx.Exec(query, userID, requestAt, requestAt, itemID, itemType); err != nil {
 			return nil, nil, nil, err
 		}
-
-		card := &UserCard{
-			UserID:       userID,
-			CardID:       item.ID,
-			AmountPerSec: *item.AmountPerSec,
-			Level:        1,
-			TotalExp:     0,
-			CreatedAt:    requestAt,
-			UpdatedAt:    requestAt,
-		}
-		query = "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-		if res, err := tx.Exec(query, card.UserID, card.CardID, card.AmountPerSec, card.Level, card.TotalExp, card.CreatedAt, card.UpdatedAt); err != nil {
-			return nil, nil, nil, err
-		} else {
-			id, err := res.LastInsertId()
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			card.ID = id
-		}
-		obtainCards = append(obtainCards, card)
-
 	case 3, 4: // 強化素材
 		query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
 		item := new(ItemMaster)
@@ -583,8 +556,6 @@ func (h *Handler) obtainItem(tx *sqlx.Tx, userID, itemID int64, itemType int, ob
 				return nil, nil, nil, err
 			}
 		}
-
-		obtainItems = append(obtainItems, uitem)
 
 	default:
 		return nil, nil, nil, ErrInvalidItemType
@@ -839,10 +810,10 @@ func (h *Handler) login(c echo.Context) error {
 	defer tx.Rollback() //nolint:errcheck
 
 	// sessionを更新
-	query = "DELETE FROM user_sessions WHERE user_id=?"
-	if _, err = tx.Exec(query, req.UserID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	// query = "DELETE FROM user_sessions WHERE user_id=?"
+	// if _, err = tx.Exec(query, req.UserID); err != nil {
+	// 	return errorResponse(c, http.StatusInternalServerError, err)
+	// }
 	sessID, err := generateUUID()
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
@@ -854,6 +825,8 @@ func (h *Handler) login(c echo.Context) error {
 		UpdatedAt: requestAt,
 		ExpiredAt: requestAt + 86400,
 	}
+	// query = "UPDATE user_sessions SET session_id=?, created_at=?, updated_at=?, expired_at=? WHERE user_id = ?"
+	// if _, err = tx.Exec(query, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt, sess.UserID); err != nil {
 	query = "INSERT INTO user_sessions(user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?)"
 	if _, err = tx.Exec(query, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
