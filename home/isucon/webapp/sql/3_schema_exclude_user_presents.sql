@@ -234,8 +234,8 @@ CREATE TABLE `user_sessions` (
   `expired_at` bigint NOT NULL,
   `deleted_at` bigint default NULL,
   PRIMARY KEY (`id`),
-  INDEX (`session_id`),
-  UNIQUE uniq_session_id (`user_id`, `deleted_at`, `session_id`)
+  INDEX (`user_id`),
+  UNIQUE uniq_session_id (`session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 ALTER TABLE user_sessions AUTO_INCREMENT=100000000001;
 

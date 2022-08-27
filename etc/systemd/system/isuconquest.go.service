@@ -14,5 +14,7 @@ ExecStop=/bin/kill -s QUIT $MAINPID
 Restart   = always
 Type      = simple
 
+StartLimitBurst=999
+
 [Install]
 WantedBy=multi-user.target
