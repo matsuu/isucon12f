@@ -1285,15 +1285,84 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		obtainPresent[i].DeletedAt = &requestAt
 		v := obtainPresent[i]
 
-		_, _, _, err = h.obtainItem(tx, v.UserID, v.ItemID, v.ItemType, int64(v.Amount), requestAt)
-		if err != nil {
-			if err == ErrUserNotFound || err == ErrItemNotFound {
-				return errorResponse(c, http.StatusNotFound, err)
+		// _, _, _, err = h.obtainItem(tx, v.UserID, v.ItemID, v.ItemType, int64(v.Amount), requestAt)
+		switch v.ItemType {
+		case 1: // coin
+			query := "UPDATE users SET isu_coin=isu_coin+? WHERE id=?"
+			if _, err := tx.Exec(query, int64(v.Amount), userID); err != nil {
+				return errorResponse(c, http.StatusInternalServerError, err)
 			}
-			if err == ErrInvalidItemType {
-				return errorResponse(c, http.StatusBadRequest, err)
+
+		case 2: // card(ハンマー)
+			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
+			item := new(ItemMaster)
+			if err := tx.Get(item, query, v.ItemID, v.ItemType); err != nil {
+				if err == sql.ErrNoRows {
+					return errorResponse(c, http.StatusNotFound, err)
+				}
+				return errorResponse(c, http.StatusInternalServerError, err)
 			}
-			return errorResponse(c, http.StatusInternalServerError, err)
+
+			card := &UserCard{
+				UserID:       userID,
+				CardID:       item.ID,
+				AmountPerSec: *item.AmountPerSec,
+				Level:        1,
+				TotalExp:     0,
+				CreatedAt:    requestAt,
+				UpdatedAt:    requestAt,
+			}
+			query = "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+			if _, err := tx.Exec(query, card.UserID, card.CardID, card.AmountPerSec, card.Level, card.TotalExp, card.CreatedAt, card.UpdatedAt); err != nil {
+				return errorResponse(c, http.StatusInternalServerError, err)
+			}
+		case 3, 4: // 強化素材
+			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
+			item := new(ItemMaster)
+			if err := tx.Get(item, query, v.ItemID, v.ItemType); err != nil {
+				if err == sql.ErrNoRows {
+					return errorResponse(c, http.StatusNotFound, err)
+				}
+				return errorResponse(c, http.StatusInternalServerError, err)
+			}
+			// 所持数取得
+			query = "SELECT * FROM user_items WHERE user_id=? AND item_id=?"
+			uitem := new(UserItem)
+			if err := tx.Get(uitem, query, userID, item.ID); err != nil {
+				if err != sql.ErrNoRows {
+					return errorResponse(c, http.StatusInternalServerError, err)
+				}
+				uitem = nil
+			}
+
+			if uitem == nil { // 新規作成
+				uitem = &UserItem{
+					UserID:    userID,
+					ItemType:  item.ItemType,
+					ItemID:    item.ID,
+					Amount:    v.Amount,
+					CreatedAt: requestAt,
+					UpdatedAt: requestAt,
+				}
+				query = "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+				if res, err := tx.Exec(query, userID, uitem.ItemID, uitem.ItemType, uitem.Amount, requestAt, requestAt); err != nil {
+					return errorResponse(c, http.StatusInternalServerError, err)
+				} else {
+					id, err := res.LastInsertId()
+					if err != nil {
+						return errorResponse(c, http.StatusInternalServerError, err)
+					}
+					uitem.ID = id
+				}
+
+			} else { // 更新
+				uitem.Amount += v.Amount
+				uitem.UpdatedAt = requestAt
+				query = "UPDATE user_items SET amount=?, updated_at=? WHERE id=?"
+				if _, err := tx.Exec(query, uitem.Amount, uitem.UpdatedAt, uitem.ID); err != nil {
+					return errorResponse(c, http.StatusInternalServerError, err)
+				}
+			}
 		}
 	}
 
