@@ -26,6 +26,11 @@ echo "delete from user_presents where id > 100000000000" | mysql -u"$ISUCON_DB_U
 		--port "$ISUCON_DB_PORT" \
 		"$ISUCON_DB_NAME"
 
+echo "ALTER TABLE user_presents AUTO_INCREMENT=100000000001;" | mysql -u"$ISUCON_DB_USER" \
+		-p"$ISUCON_DB_PASSWORD" \
+		--host "$ISUCON_DB_HOST" \
+		--port "$ISUCON_DB_PORT" \
+		"$ISUCON_DB_NAME"
 DIR=`mysql -u"$ISUCON_DB_USER" -p"$ISUCON_DB_PASSWORD" -h "$ISUCON_DB_HOST" -Ns -e "show variables like 'secure_file_priv'" | cut -f2`
 SECURE_DIR=${DIR:-/var/lib/mysql-files/}
 
