@@ -42,7 +42,7 @@
  
 -------- Storage Engine Statistics -----------------------------------------------------------------
 [--] Status: +ARCHIVE +BLACKHOLE +CSV -FEDERATED +InnoDB +MEMORY +MRG_MYISAM +MyISAM +PERFORMANCE_SCHEMA 
-[--] Data in InnoDB tables: 736.1M (Tables: 22)
+[--] Data in InnoDB tables: 737.2M (Tables: 22)
 [OK] Total fragmented tables: 0
  
 -------- Analysis Performance Metrics --------------------------------------------------------------
@@ -62,7 +62,7 @@
 [OK] NO SECURITY CVE FOUND FOR YOUR VERSION
  
 -------- Performance Metrics -----------------------------------------------------------------------
-[--] Up for: 4h 19m 46s (7M q [462.580 qps], 59K conn, TX: 3G, RX: 2G)
+[--] Up for: 4h 34m 35s (7M q [469.656 qps], 65K conn, TX: 3G, RX: 2G)
 [--] Reads / Writes: 63% / 37%
 [--] Binary logging is disabled
 [--] Physical Memory     : 3.8G
@@ -74,19 +74,19 @@
 [!!] Maximum reached memory usage: 10.8G (282.49% of installed RAM)
 [!!] Maximum possible memory usage: 10.8G (280.81% of installed RAM)
 [!!] Overall possible memory usage with other process exceeded memory
-[!!] Slow queries: 106% (7M/7M)
+[!!] Slow queries: 105% (8M/7M)
 [!!] Highest connection usage: 100%  (152/151)
-[OK] Aborted connections: 0.00%  (1/59851)
+[OK] Aborted connections: 0.00%  (1/65102)
 [!!] Name resolution is active: a reverse name resolution is made for each new connection which can reduce performance
 [--] Query cache has been removed since MySQL 8.0
-[OK] Sorts requiring temporary tables: 0% (0 temp sorts / 234K sorts)
-[!!] Joins performed without indexes: 67
-[OK] Temporary tables created on disk: 0% (0 on disk / 883 total)
-[OK] Thread cache hit rate: 91% (5K created / 59K connections)
+[OK] Sorts requiring temporary tables: 0% (0 temp sorts / 253K sorts)
+[!!] Joins performed without indexes: 75
+[OK] Temporary tables created on disk: 0% (0 on disk / 1K total)
+[OK] Thread cache hit rate: 91% (5K created / 65K connections)
 [OK] Table cache hit rate: 99% (7M hits / 7M requests)
 [OK] table_definition_cache (2000) is greater than number of tables (349)
 [OK] Open file limit used: 0% (1/10K)
-[OK] Table locks acquired immediately: 100% (71 immediate / 71 locks)
+[OK] Table locks acquired immediately: 100% (76 immediate / 76 locks)
  
 -------- Performance schema ------------------------------------------------------------------------
 [--] Performance_schema is activated.
@@ -103,10 +103,10 @@
 [--] InnoDB is enabled.
 [--] InnoDB Thread Concurrency: 0
 [OK] InnoDB File per table is activated
-[OK] InnoDB buffer pool / data size: 1.0G / 736.1M
+[OK] InnoDB buffer pool / data size: 1.0G / 737.2M
 [!!] Ratio InnoDB log file size / InnoDB Buffer pool size (9.375%): 48.0M * 2 / 1.0G should be equal to 25%
 [!!] InnoDB buffer pool <= 1G and Innodb_buffer_pool_instances(!=1).
 [--] Number of InnoDB Buffer Pool Chunk: 8 for 8 Buffer Pool Instance(s)
 [OK] Innodb_buffer_pool_size aligned with Innodb_buffer_pool_chunk_size & Innodb_buffer_pool_instances
-[OK] InnoDB Read buffer efficiency: 99.97% (402135320 hits/ 402238465 total)
+[OK] InnoDB Read buffer efficiency: 99.97% (423542580 hits/ 423662180 total)
 [!!] InnoDB Write Log efficiency: 0% (0 hits/ 0 total)

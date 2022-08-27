@@ -1275,6 +1275,7 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
+	var amount int64
 	// 配布処理
 	for i := range obtainPresent {
 		if obtainPresent[i].DeletedAt != nil {
@@ -1288,32 +1289,10 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		// _, _, _, err = h.obtainItem(tx, v.UserID, v.ItemID, v.ItemType, int64(v.Amount), requestAt)
 		switch v.ItemType {
 		case 1: // coin
-			query := "UPDATE users SET isu_coin=isu_coin+? WHERE id=?"
-			if _, err := tx.Exec(query, int64(v.Amount), userID); err != nil {
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
-
+			amount += int64(v.Amount)
 		case 2: // card(ハンマー)
-			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-			item := new(ItemMaster)
-			if err := tx.Get(item, query, v.ItemID, v.ItemType); err != nil {
-				if err == sql.ErrNoRows {
-					return errorResponse(c, http.StatusNotFound, err)
-				}
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
-
-			card := &UserCard{
-				UserID:       userID,
-				CardID:       item.ID,
-				AmountPerSec: *item.AmountPerSec,
-				Level:        1,
-				TotalExp:     0,
-				CreatedAt:    requestAt,
-				UpdatedAt:    requestAt,
-			}
-			query = "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-			if _, err := tx.Exec(query, card.UserID, card.CardID, card.AmountPerSec, card.Level, card.TotalExp, card.CreatedAt, card.UpdatedAt); err != nil {
+			query = "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) SELECT ?, id, amount_per_sec, 1, 0, ?, ? FROM item_masters WHERE id=? AND item_type=2"
+			if _, err := tx.Exec(query, userID, requestAt, requestAt, v.ItemID); err != nil {
 				return errorResponse(c, http.StatusInternalServerError, err)
 			}
 		case 3, 4: // 強化素材
@@ -1363,6 +1342,12 @@ func (h *Handler) receivePresent(c echo.Context) error {
 					return errorResponse(c, http.StatusInternalServerError, err)
 				}
 			}
+		}
+	}
+	if amount > 0 {
+		query := "UPDATE users SET isu_coin=isu_coin+? WHERE id = ?"
+		if _, err := tx.Exec(query, amount, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
 		}
 	}
 
