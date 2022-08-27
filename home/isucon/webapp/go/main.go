@@ -440,7 +440,6 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 
 	// 全員プレゼント取得情報更新
 	obtainPresents := make([]*UserPresent, 0, len(normalPresents))
-	insertPresents := make([]UserPresent, 0, len(normalPresents))
 	histories := make([]UserPresentAllReceivedHistory, 0, len(normalPresents))
 
 	for _, np := range normalPresents {
@@ -455,7 +454,6 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 			UpdatedAt:      requestAt,
 		}
 		obtainPresents = append(obtainPresents, &up)
-		insertPresents = append(insertPresents, up)
 
 		// historyに入れる
 		history := UserPresentAllReceivedHistory{
@@ -467,9 +465,9 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 		}
 		histories = append(histories, history)
 	}
-	if len(insertPresents) > 0 {
+	if len(obtainPresents) > 0 {
 		query := "INSERT INTO user_presents(user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES (:user_id, :sent_at, :item_type, :item_id, :amount, :present_message, :created_at, :updated_at)"
-		if res, err := tx.NamedExec(query, insertPresents); err != nil {
+		if res, err := tx.NamedExec(query, obtainPresents); err != nil {
 			return nil, err
 		} else {
 			id, err := res.LastInsertId()
@@ -1123,10 +1121,8 @@ func (h *Handler) drawGacha(c echo.Context) error {
 
 	// 直付与 => プレゼントに入れる
 	presents := make([]*UserPresent, 0, gachaCount)
+
 	for _, v := range result {
-		if err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
 		present := &UserPresent{
 			UserID:         userID,
 			SentAt:         requestAt,
@@ -1137,18 +1133,21 @@ func (h *Handler) drawGacha(c echo.Context) error {
 			CreatedAt:      requestAt,
 			UpdatedAt:      requestAt,
 		}
-		query = "INSERT INTO user_presents(user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-		if res, err := tx.Exec(query, present.UserID, present.SentAt, present.ItemType, present.ItemID, present.Amount, present.PresentMessage, present.CreatedAt, present.UpdatedAt); err != nil {
+		presents = append(presents, present)
+	}
+	if len(presents) > 0 {
+		query := "INSERT INTO user_presents(user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES (:user_id, :sent_at, :item_type, :item_id, :amount, :present_message, :created_at, :updated_at)"
+		if res, err := tx.NamedExec(query, presents); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		} else {
 			id, err := res.LastInsertId()
 			if err != nil {
 				return errorResponse(c, http.StatusInternalServerError, err)
 			}
-			present.ID = id
+			for i, up := range presents {
+				up.ID = id + int64(i)
+			}
 		}
-
-		presents = append(presents, present)
 	}
 
 	// isuconをへらす
