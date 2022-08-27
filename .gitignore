@@ -33,6 +33,7 @@
 /etc/ec2_version
 /etc/ethertypes
 /etc/flash-kernel/
+/etc/fonts
 /etc/fstab
 /etc/fuse.conf
 /etc/fwupd/
