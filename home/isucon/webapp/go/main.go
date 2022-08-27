@@ -497,18 +497,8 @@ func (h *Handler) obtainItem(tx *sqlx.Tx, userID, itemID int64, itemType int, ob
 
 	switch itemType {
 	case 1: // coin
-		user := new(User)
-		query := "SELECT * FROM users WHERE id=?"
-		if err := tx.Get(user, query, userID); err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil, nil, ErrUserNotFound
-			}
-			return nil, nil, nil, err
-		}
-
-		query = "UPDATE users SET isu_coin=? WHERE id=?"
-		totalCoin := user.IsuCoin + obtainAmount
-		if _, err := tx.Exec(query, totalCoin, user.ID); err != nil {
+		query := "UPDATE users SET isu_coin=isu_coin+? WHERE id=?"
+		if _, err := tx.Exec(query, obtainAmount, userID); err != nil {
 			return nil, nil, nil, err
 		}
 		obtainCoins = append(obtainCoins, obtainAmount)
