@@ -1526,7 +1526,7 @@ func (h *Handler) addExpToCard(c echo.Context) error {
 	SELECT uc.id , uc.user_id , uc.card_id , uc.amount_per_sec , uc.level, uc.total_exp, im.amount_per_sec as 'base_amount_per_sec', im.max_level , im.max_amount_per_sec , im.base_exp_per_level
 	FROM user_cards as uc
 	INNER JOIN item_masters as im ON uc.card_id = im.id
-	WHERE uc.id = ? AND uc.user_id=?
+	WHERE uc.id = ? AND uc.user_id=? FOR UPDATE
 	`
 	if err = h.DB.Get(card, query, cardID, userID); err != nil {
 		if err == sql.ErrNoRows {
@@ -1545,7 +1545,7 @@ func (h *Handler) addExpToCard(c echo.Context) error {
 	SELECT ui.id, ui.user_id, ui.item_id, ui.item_type, ui.amount, ui.created_at, ui.updated_at, im.gained_exp
 	FROM user_items as ui
 	INNER JOIN item_masters as im ON ui.item_id = im.id
-	WHERE ui.item_type = 3 AND ui.id=? AND ui.user_id=?
+	WHERE ui.item_type = 3 AND ui.id=? AND ui.user_id=? FOR UPDATE
 	`
 
 	userItems := make([]*UserItem, 0)
