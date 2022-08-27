@@ -25,7 +25,7 @@ sudo systemctl restart isuconquest.go
 
 # mysql
 # sudo mysql -e "TRUNCATE TABLE performance_schema.events_statements_summary_by_digest"
-sudo truncate -s 0 "${mysql_slow_log}"
+ssh 133.152.6.242 sudo truncate -s 0 "${mysql_slow_log}"
 #sudo truncate -s 0 "${mysql_error_log}"
 # sudo systemctl restart mysql
 

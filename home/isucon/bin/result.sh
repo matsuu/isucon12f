@@ -15,8 +15,8 @@ echo "# Analyze"
 #sudo cat "${mysql_error_log}" | gzip -9c > "${data_dir}/mysql_error.log.gz"
 
 sudo cat "${nginx_access_log}" | kataribe -f "${HOME}/kataribe.toml" > "${result_dir}/kataribe.txt"
-sudo mysqltuner.pl > "${result_dir}/mysqltuner.txt"
-sudo cat "${mysql_slow_log}" | go-mysql-query-digest --limit 100% > "${result_dir}/pt-query-digest.txt"
+ssh 133.152.6.242 sudo mysqltuner.pl > "${result_dir}/mysqltuner.txt"
+ssh 133.152.6.242 sudo cat "${mysql_slow_log}" | go-mysql-query-digest --limit 100% > "${result_dir}/pt-query-digest.txt"
 
 sudo git add /
 sudo git commit -av
