@@ -178,7 +178,7 @@ CREATE TABLE `user_items` (
   `updated_at`bigint NOT NULL,
   `deleted_at` bigint default NULL,
   PRIMARY KEY (`id`),
-  INDEX userid_idx (`user_id`)
+  INDEX userid_idx (`user_id`, `item_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 ALTER TABLE user_items AUTO_INCREMENT=100000000001;
 
@@ -234,7 +234,8 @@ CREATE TABLE `user_sessions` (
   `expired_at` bigint NOT NULL,
   `deleted_at` bigint default NULL,
   PRIMARY KEY (`id`),
-  UNIQUE uniq_session_id (`user_id`, `session_id`, `deleted_at`)
+  INDEX (`session_id`),
+  UNIQUE uniq_session_id (`user_id`, `deleted_at`, `session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 ALTER TABLE user_sessions AUTO_INCREMENT=100000000001;
 
@@ -249,7 +250,8 @@ CREATE TABLE `user_one_time_tokens` (
   `expired_at` bigint NOT NULL,
   `deleted_at` bigint default NULL,
   PRIMARY KEY (`id`),
-  UNIQUE uniq_token (`user_id`, `token`, `deleted_at`)
+  INDEX (`token`),
+  UNIQUE uniq_token (`user_id`, `deleted_at`, `token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 ALTER TABLE user_one_time_tokens AUTO_INCREMENT=100000000001;
 
@@ -263,7 +265,8 @@ CREATE TABLE `admin_sessions` (
   `expired_at` bigint NOT NULL,
   `deleted_at` bigint default NULL,
   PRIMARY KEY (`id`),
-  UNIQUE uniq_admin_session_id (`user_id`, `session_id`, `deleted_at`)
+  INDEX (`session_id`),
+  UNIQUE uniq_admin_session_id (`user_id`, `deleted_at`, `session_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 ALTER TABLE admin_sessions AUTO_INCREMENT=100000000001;
 
