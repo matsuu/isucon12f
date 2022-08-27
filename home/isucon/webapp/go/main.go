@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
@@ -1866,7 +1866,9 @@ func errorResponse(c echo.Context, statusCode int, err error) error {
 
 // successResponse responds success.
 func successResponse(c echo.Context, v interface{}) error {
-	return c.JSON(http.StatusOK, v)
+	c.Response().Header().Set(echo.HeaderContentType, echo.MIMEApplicationJSONCharsetUTF8)
+	c.Response().WriteHeader(http.StatusOK)
+	return json.NewEncoder(c.Response()).Encode(v)
 }
 
 // noContentResponse
