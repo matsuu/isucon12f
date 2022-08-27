@@ -129,6 +129,7 @@ CREATE TABLE `user_present_all_received_history` (
   `created_at` bigint NOT NULL,
   `updated_at`bigint NOT NULL,
   `deleted_at` bigint default NULL,
+  INDEX (user_id, present_all_id),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
