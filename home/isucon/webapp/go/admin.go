@@ -534,7 +534,7 @@ func (h *Handler) adminUser(c echo.Context) error {
 
 	query := "SELECT * FROM users WHERE id=?"
 	user := new(User)
-	if err = h.DB.Get(user, query, userID); err != nil {
+	if err = h.DBU(userID).Get(user, query, userID); err != nil {
 		if err == sql.ErrNoRows {
 			return errorResponse(c, http.StatusNotFound, ErrUserNotFound)
 		}
@@ -543,43 +543,43 @@ func (h *Handler) adminUser(c echo.Context) error {
 
 	query = "SELECT * FROM user_devices WHERE user_id=?"
 	devices := make([]*UserDevice, 0)
-	if err = h.DB.Select(&devices, query, userID); err != nil {
+	if err = h.DBU(userID).Select(&devices, query, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
 	query = "SELECT * FROM user_cards WHERE user_id=?"
 	cards := make([]*UserCard, 0)
-	if err = h.DB.Select(&cards, query, userID); err != nil {
+	if err = h.DBU(userID).Select(&cards, query, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
 	query = "SELECT * FROM user_decks WHERE user_id=?"
 	decks := make([]*UserDeck, 0)
-	if err = h.DB.Select(&decks, query, userID); err != nil {
+	if err = h.DBU(userID).Select(&decks, query, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
 	query = "SELECT * FROM user_items WHERE user_id=?"
 	items := make([]*UserItem, 0)
-	if err = h.DB.Select(&items, query, userID); err != nil {
+	if err = h.DBU(userID).Select(&items, query, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
 	query = "SELECT * FROM user_login_bonuses WHERE user_id=?"
 	loginBonuses := make([]*UserLoginBonus, 0)
-	if err = h.DB.Select(&loginBonuses, query, userID); err != nil {
+	if err = h.DBU(userID).Select(&loginBonuses, query, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
 	query = "SELECT * FROM user_presents WHERE user_id=?"
 	presents := make([]*UserPresent, 0)
-	if err = h.DB.Select(&presents, query, userID); err != nil {
+	if err = h.DBU(userID).Select(&presents, query, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
 	query = "SELECT * FROM user_present_all_received_history WHERE user_id=?"
 	presentHistory := make([]*UserPresentAllReceivedHistory, 0)
-	if err = h.DB.Select(&presentHistory, query, userID); err != nil {
+	if err = h.DBU(userID).Select(&presentHistory, query, userID); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
@@ -622,7 +622,7 @@ func (h *Handler) adminBanUser(c echo.Context) error {
 
 	query := "SELECT * FROM users WHERE id=?"
 	user := new(User)
-	if err = h.DB.Get(user, query, userID); err != nil {
+	if err = h.DBU(userID).Get(user, query, userID); err != nil {
 		if err == sql.ErrNoRows {
 			return errorResponse(c, http.StatusBadRequest, ErrUserNotFound)
 		}
@@ -630,7 +630,7 @@ func (h *Handler) adminBanUser(c echo.Context) error {
 	}
 
 	query = "INSERT user_bans(user_id, created_at, updated_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE updated_at = ?"
-	if _, err = h.DB.Exec(query, userID, requestAt, requestAt, requestAt); err != nil {
+	if _, err = h.DBU(userID).Exec(query, userID, requestAt, requestAt, requestAt); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 

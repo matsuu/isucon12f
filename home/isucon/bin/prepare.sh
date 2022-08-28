@@ -25,9 +25,17 @@ sudo systemctl restart isuconquest.go
 
 # mysql
 # sudo mysql -e "TRUNCATE TABLE performance_schema.events_statements_summary_by_digest"
-ssh 133.152.6.242 sudo truncate -s 0 "${mysql_slow_log}"
+sudo truncate -s 0 "${mysql_slow_log}"
 #sudo truncate -s 0 "${mysql_error_log}"
 # sudo systemctl restart mysql
+
+for h in `seq 242 245` ; do
+  ip="133.152.6.$h"
+  rsync -av --delete /home/isucon/webapp/ $ip:/home/isucon/webapp/
+  ssh $ip sudo systemctl restart isuconquest.go
+  ssh $ip sudo truncate -s 0 "${mysql_slow_log}"
+done
+
 
 # nginx
 sudo truncate -s 0 "${nginx_access_log}"

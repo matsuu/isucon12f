@@ -1,0 +1,10 @@
+
+# Current date: Sun Aug 28 14:50:50 2022
+# Hostname: a01-23
+# Files: /dev/stdin
+# Overall: 0 total, 0 unique
+# Attribute          total     min     max     avg     95%  median
+# =============    ======= ======= ======= ======= ======= =======
+
+# Profile
+# Rank Query ID           
