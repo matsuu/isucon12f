@@ -44,6 +44,9 @@ key_buffer_size		= 16M
 myisam-recover-options  = BACKUP
 
 # max_connections        = 151
+max_connections        = 600
+thread_cache_size = 600
+table_open_cache = 16000
 
 # table_open_cache       = 4000
 

@@ -7,3 +7,9 @@ ff00::0 ip6-mcastprefix
 ff02::1 ip6-allnodes
 ff02::2 ip6-allrouters
 ff02::3 ip6-allhosts
+
+133.152.6.241 isu1
+133.152.6.242 isu2
+133.152.6.243 isu3
+133.152.6.244 isu4
+133.152.6.245 isu5

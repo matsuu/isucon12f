@@ -246,6 +246,9 @@ func (h *Handler) adminUpdateMaster(c echo.Context) error {
 				"status":         v[1],
 				"master_version": v[2],
 			})
+			if v[1] == "1" {
+				mapMasterVersion.Store(1, v[2])
+			}
 		}
 
 		query := "INSERT INTO version_masters(id, status, master_version) VALUES (:id, :status, :master_version) ON DUPLICATE KEY UPDATE status=VALUES(status), master_version=VALUES(master_version)"

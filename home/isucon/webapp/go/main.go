@@ -48,6 +48,8 @@ const (
 
 var (
 	dbHosts = []string{"133.152.6.242", "133.152.6.243", "133.152.6.244", "133.152.6.245"}
+
+	mapMasterVersion sync.Map
 )
 
 type Handler struct {
@@ -89,6 +91,14 @@ func main() {
 		}
 		defer dbx.Close()
 	}
+
+	query := "SELECT master_version FROM version_masters WHERE status=1"
+	var masterVersion string
+	if err := h.DB.Get(&masterVersion, query); err != nil {
+		e.Logger.Fatalf("failed to get masterVersion: %v", err)
+	}
+	mapMasterVersion = sync.Map{}
+	mapMasterVersion.Store(1, masterVersion)
 
 	// setting server
 	e.Server.Addr = fmt.Sprintf(":%v", "8080")
@@ -173,16 +183,24 @@ func (h *Handler) apiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		c.Set("requestTime", requestAt.Unix())
 
 		// マスタ確認
-		query := "SELECT * FROM version_masters WHERE status=1"
-		masterVersion := new(VersionMaster)
-		if err := h.DB.Get(masterVersion, query); err != nil {
-			if err == sql.ErrNoRows {
-				return errorResponse(c, http.StatusNotFound, fmt.Errorf("active master version is not found"))
+		/*
+			query := "SELECT * FROM version_masters WHERE status=1"
+			masterVersion := new(VersionMaster)
+			if err := h.DB.Get(masterVersion, query); err != nil {
+				if err == sql.ErrNoRows {
+					return errorResponse(c, http.StatusNotFound, fmt.Errorf("active master version is not found"))
+				}
+				return errorResponse(c, http.StatusInternalServerError, err)
 			}
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
 
-		if masterVersion.MasterVersion != c.Request().Header.Get("x-master-version") {
+			if masterVersion.MasterVersion != c.Request().Header.Get("x-master-version") {
+				return errorResponse(c, http.StatusUnprocessableEntity, ErrInvalidMasterVersion)
+			}
+		*/
+		v, _ := mapMasterVersion.Load(1)
+		masterVersion := v.(string)
+
+		if masterVersion != c.Request().Header.Get("x-master-version") {
 			return errorResponse(c, http.StatusUnprocessableEntity, ErrInvalidMasterVersion)
 		}
 
@@ -610,6 +628,19 @@ func initialize(c echo.Context) error {
 		}(host)
 	}
 	wg.Wait()
+
+	dbx, err := connectDB(dbHosts[0], true)
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	defer dbx.Close()
+	query := "SELECT master_version FROM version_masters WHERE status=1"
+	var masterVersion string
+	if err := dbx.Get(&masterVersion, query); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	mapMasterVersion = sync.Map{}
+	mapMasterVersion.Store(1, masterVersion)
 
 	return successResponse(c, &InitializeResponse{
 		Language: "go",
@@ -1849,7 +1880,7 @@ func (h *Handler) health(c echo.Context) error {
 
 // errorResponse returns error.
 func errorResponse(c echo.Context, statusCode int, err error) error {
-	if statusCode != 403 {
+	if statusCode >= 500 {
 		c.Logger().Errorf("status=%d, err=%+v", statusCode, errors.WithStack(err))
 	}
 
