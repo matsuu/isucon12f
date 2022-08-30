@@ -16,8 +16,8 @@ echo "# Analyze"
 
 sudo cat "${nginx_access_log}" | kataribe -f "${HOME}/kataribe.toml" > "${result_dir}/kataribe.txt"
 
-sudo mysqltuner.pl > "${result_dir}/mysqltuner_241.txt"
-sudo cat "${mysql_slow_log}" | go-mysql-query-digest --limit 100% > "${result_dir}/pt-query-digest_241.txt"
+#sudo mysqltuner.pl > "${result_dir}/mysqltuner_241.txt"
+#sudo cat "${mysql_slow_log}" | go-mysql-query-digest --limit 100% > "${result_dir}/pt-query-digest_241.txt"
 
 for h in `seq 242 245` ; do
   ip="133.152.6.$h"
@@ -25,6 +25,6 @@ for h in `seq 242 245` ; do
   ssh $ip sudo cat "${mysql_slow_log}" | go-mysql-query-digest --limit 100% > "${result_dir}/pt-query-digest_$h.txt"
 done
 
-sudo git add /
-sudo git commit -av
-sudo git push origin 延長戦
+#sudo git add /
+#sudo git commit -av
+#sudo git push origin 延長戦

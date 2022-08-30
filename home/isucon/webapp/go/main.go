@@ -347,7 +347,7 @@ func (h *Handler) loginProcess(tx *sqlx.Tx, userID int64, requestAt int64) (*Use
 	}
 
 	// ログインボーナス処理
-	loginBonuses, err := h.obtainLoginBonus(tx, userID, requestAt)
+	bonusCoin, bonusCards, bonusItems, loginBonuses, err := h.obtainLoginBonus(tx, userID, requestAt)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -356,6 +356,57 @@ func (h *Handler) loginProcess(tx *sqlx.Tx, userID int64, requestAt int64) (*Use
 	allPresents, err := h.obtainPresent(tx, userID, requestAt)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+
+	query = "UPDATE users SET updated_at=?, last_activated_at=?, isu_coin=isu_coin+? WHERE id=?"
+	if _, err := tx.Exec(query, requestAt, requestAt, bonusCoin, userID); err != nil {
+		return nil, nil, nil, err
+	}
+
+	if len(bonusCards) > 0 {
+		query := "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (:user_id, :card_id, :amount_per_sec, :level, :total_exp, :created_at, :updated_at)"
+		if _, err := tx.NamedExec(query, bonusCards); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	if len(bonusItems) > 0 {
+		querySelect := "SELECT id FROM user_items WHERE user_id=:user_id AND item_id=:item_id"
+		stmtSelect, err := tx.PrepareNamed(querySelect)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		defer stmtSelect.Close()
+
+		queryInsert := "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (:user_id, :item_id, :item_type, :amount, :created_at, :updated_at)"
+		stmtInsert, err := tx.PrepareNamed(queryInsert)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		defer stmtInsert.Close()
+
+		queryUpdate := "UPDATE user_items SET amount=amount+:amount,updated_at=:updated_at WHERE user_id=:user_id AND item_id=:item_id"
+		stmtUpdate, err := tx.PrepareNamed(queryUpdate)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		defer stmtUpdate.Close()
+
+		for _, userItem := range bonusItems {
+			var id int
+			if err := stmtSelect.Get(&id, userItem); err != nil {
+				if err != sql.ErrNoRows {
+					return nil, nil, nil, err
+				}
+				if _, err := stmtInsert.Exec(userItem); err != nil {
+					return nil, nil, nil, err
+				}
+			} else {
+				if _, err := stmtUpdate.Exec(userItem); err != nil {
+					return nil, nil, nil, err
+				}
+			}
+		}
 	}
 
 	if err = tx.Get(&user.IsuCoin, "SELECT isu_coin FROM users WHERE id=?", user.ID); err != nil {
@@ -368,11 +419,6 @@ func (h *Handler) loginProcess(tx *sqlx.Tx, userID int64, requestAt int64) (*Use
 	user.UpdatedAt = requestAt
 	user.LastActivatedAt = requestAt
 
-	query = "UPDATE users SET updated_at=?, last_activated_at=? WHERE id=?"
-	if _, err := tx.Exec(query, requestAt, requestAt, userID); err != nil {
-		return nil, nil, nil, err
-	}
-
 	return user, loginBonuses, allPresents, nil
 }
 
@@ -384,15 +430,19 @@ func isCompleteTodayLogin(lastActivatedAt, requestAt time.Time) bool {
 }
 
 // obtainLoginBonus
-func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) ([]*UserLoginBonus, error) {
+func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (int64, []*UserCard, []*UserItem, []*UserLoginBonus, error) {
 	// login bonus masterから有効なログインボーナスを取得
 	loginBonuses := make([]*LoginBonusMaster, 0)
 	query := "SELECT * FROM login_bonus_masters WHERE start_at <= ? AND end_at >= ?"
 	if err := tx.Select(&loginBonuses, query, requestAt, requestAt); err != nil {
-		return nil, err
+		return 0, nil, nil, nil, err
 	}
 
 	sendLoginBonuses := make([]*UserLoginBonus, 0)
+
+	obtainCoin := int64(0)
+	obtainCards := make([]*UserCard, 0)
+	obtainItems := make([]*UserItem, 0)
 
 	for _, bonus := range loginBonuses {
 		initBonus := false
@@ -401,7 +451,7 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 		query = "SELECT * FROM user_login_bonuses WHERE user_id=? AND login_bonus_id=?"
 		if err := tx.Get(userBonus, query, userID, bonus.ID); err != nil {
 			if err != sql.ErrNoRows {
-				return nil, err
+				return 0, nil, nil, nil, err
 			}
 			initBonus = true
 
@@ -434,39 +484,89 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 		query = "SELECT * FROM login_bonus_reward_masters WHERE login_bonus_id=? AND reward_sequence=?"
 		if err := tx.Get(rewardItem, query, bonus.ID, userBonus.LastRewardSequence); err != nil {
 			if err == sql.ErrNoRows {
-				return nil, ErrLoginBonusRewardNotFound
+				return 0, nil, nil, nil, ErrLoginBonusRewardNotFound
 			}
-			return nil, err
+			return 0, nil, nil, nil, err
 		}
 
-		_, _, _, err := h.obtainItem(tx, userID, rewardItem.ItemID, rewardItem.ItemType, rewardItem.Amount, requestAt)
-		if err != nil {
-			return nil, err
+		switch rewardItem.ItemType {
+		case 1: // coin
+			obtainCoin += rewardItem.Amount
+		case 2: // card(ハンマー)
+			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
+			item := new(ItemMaster)
+			if err := tx.Get(item, query, rewardItem.ItemID, rewardItem.ItemType); err != nil {
+				if err == sql.ErrNoRows {
+					return 0, nil, nil, nil, ErrItemNotFound
+				}
+				return 0, nil, nil, nil, err
+			}
+
+			cID, err := h.generateID()
+			if err != nil {
+				return 0, nil, nil, nil, err
+			}
+			card := &UserCard{
+				ID:           cID,
+				UserID:       userID,
+				CardID:       item.ID,
+				AmountPerSec: *item.AmountPerSec,
+				Level:        1,
+				TotalExp:     0,
+				CreatedAt:    requestAt,
+				UpdatedAt:    requestAt,
+			}
+			obtainCards = append(obtainCards, card)
+		case 3, 4: // 強化素材
+			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
+			item := new(ItemMaster)
+			if err := tx.Get(item, query, rewardItem.ItemID, rewardItem.ItemType); err != nil {
+				if err == sql.ErrNoRows {
+					return 0, nil, nil, nil, ErrItemNotFound
+				}
+				return 0, nil, nil, nil, err
+			}
+			uitemID, err := h.generateID()
+			if err != nil {
+				return 0, nil, nil, nil, err
+			}
+			uitem := &UserItem{
+				ID:        uitemID,
+				UserID:    userID,
+				ItemType:  item.ItemType,
+				ItemID:    item.ID,
+				Amount:    int(rewardItem.Amount),
+				CreatedAt: requestAt,
+				UpdatedAt: requestAt,
+			}
+			obtainItems = append(obtainItems, uitem)
+		default:
+			return 0, nil, nil, nil, ErrInvalidItemType
 		}
 
 		// 進捗の保存
 		if initBonus {
 			query = "INSERT INTO user_login_bonuses(user_id, login_bonus_id, last_reward_sequence, loop_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
 			if res, err := tx.Exec(query, userBonus.UserID, userBonus.LoginBonusID, userBonus.LastRewardSequence, userBonus.LoopCount, userBonus.CreatedAt, userBonus.UpdatedAt); err != nil {
-				return nil, err
+				return 0, nil, nil, nil, err
 			} else {
 				id, err := res.LastInsertId()
 				if err != nil {
-					return nil, err
+					return 0, nil, nil, nil, err
 				}
 				userBonus.ID = id
 			}
 		} else {
 			query = "UPDATE user_login_bonuses SET last_reward_sequence=?, loop_count=?, updated_at=? WHERE id=?"
-			if _, err = tx.Exec(query, userBonus.LastRewardSequence, userBonus.LoopCount, userBonus.UpdatedAt, userBonus.ID); err != nil {
-				return nil, err
+			if _, err := tx.Exec(query, userBonus.LastRewardSequence, userBonus.LoopCount, userBonus.UpdatedAt, userBonus.ID); err != nil {
+				return 0, nil, nil, nil, err
 			}
 		}
 
 		sendLoginBonuses = append(sendLoginBonuses, userBonus)
 	}
 
-	return sendLoginBonuses, nil
+	return obtainCoin, obtainCards, obtainItems, sendLoginBonuses, nil
 }
 
 // obtainPresent プレゼント付与処理
@@ -536,16 +636,32 @@ func (h *Handler) obtainItem(tx *sqlx.Tx, userID, itemID int64, itemType int, ob
 
 	switch itemType {
 	case 1: // coin
-		query := "UPDATE users SET isu_coin=isu_coin+? WHERE id=?"
-		if _, err := tx.Exec(query, obtainAmount, userID); err != nil {
+		obtainCoins = append(obtainCoins, obtainAmount)
+	case 2: // card(ハンマー)
+		query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
+		item := new(ItemMaster)
+		if err := tx.Get(item, query, itemID, itemType); err != nil {
+			if err == sql.ErrNoRows {
+				return nil, nil, nil, ErrItemNotFound
+			}
 			return nil, nil, nil, err
 		}
 
-	case 2: // card(ハンマー)
-		query := "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) SELECT ?, id, amount_per_sec, 1, 0, ?, ? FROM item_masters WHERE id=? AND item_type=?"
-		if _, err := tx.Exec(query, userID, requestAt, requestAt, itemID, itemType); err != nil {
+		cID, err := h.generateID()
+		if err != nil {
 			return nil, nil, nil, err
 		}
+		card := &UserCard{
+			ID:           cID,
+			UserID:       userID,
+			CardID:       item.ID,
+			AmountPerSec: *item.AmountPerSec,
+			Level:        1,
+			TotalExp:     0,
+			CreatedAt:    requestAt,
+			UpdatedAt:    requestAt,
+		}
+		obtainCards = append(obtainCards, card)
 	case 3, 4: // 強化素材
 		query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
 		item := new(ItemMaster)
@@ -555,45 +671,20 @@ func (h *Handler) obtainItem(tx *sqlx.Tx, userID, itemID int64, itemType int, ob
 			}
 			return nil, nil, nil, err
 		}
-		// 所持数取得
-		query = "SELECT * FROM user_items WHERE user_id=? AND item_id=?"
-		uitem := new(UserItem)
-		if err := tx.Get(uitem, query, userID, item.ID); err != nil {
-			if err != sql.ErrNoRows {
-				return nil, nil, nil, err
-			}
-			uitem = nil
+		uitemID, err := h.generateID()
+		if err != nil {
+			return nil, nil, nil, err
 		}
-
-		if uitem == nil { // 新規作成
-			uitem = &UserItem{
-				UserID:    userID,
-				ItemType:  item.ItemType,
-				ItemID:    item.ID,
-				Amount:    int(obtainAmount),
-				CreatedAt: requestAt,
-				UpdatedAt: requestAt,
-			}
-			query = "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-			if res, err := tx.Exec(query, userID, uitem.ItemID, uitem.ItemType, uitem.Amount, requestAt, requestAt); err != nil {
-				return nil, nil, nil, err
-			} else {
-				id, err := res.LastInsertId()
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				uitem.ID = id
-			}
-
-		} else { // 更新
-			uitem.Amount += int(obtainAmount)
-			uitem.UpdatedAt = requestAt
-			query = "UPDATE user_items SET amount=?, updated_at=? WHERE id=?"
-			if _, err := tx.Exec(query, uitem.Amount, uitem.UpdatedAt, uitem.ID); err != nil {
-				return nil, nil, nil, err
-			}
+		uitem := &UserItem{
+			ID:        uitemID,
+			UserID:    userID,
+			ItemType:  item.ItemType,
+			ItemID:    item.ID,
+			Amount:    int(obtainAmount),
+			CreatedAt: requestAt,
+			UpdatedAt: requestAt,
 		}
-
+		obtainItems = append(obtainItems, uitem)
 	default:
 		return nil, nil, nil, ErrInvalidItemType
 	}
@@ -605,16 +696,6 @@ func (h *Handler) obtainItem(tx *sqlx.Tx, userID, itemID int64, itemType int, ob
 // POST /initialize
 func initialize(c echo.Context) error {
 	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		out, err := exec.Command("/bin/sh", "-c", SQLDirectory+"init.sh").CombinedOutput()
-		if err != nil {
-			c.Logger().Errorf("Failed to initialize %s: %v", string(out), err)
-			// return errorResponse(c, http.StatusInternalServerError, err)
-		}
-	}()
 
 	for _, host := range dbHosts {
 		wg.Add(1)
@@ -1333,6 +1414,10 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
+	obtainCoin := 0
+	obtainCards := make([]*UserCard, 0)
+	obtainItems := make([]*UserItem, 0)
+
 	// 配布処理
 	for i := range obtainPresent {
 		if obtainPresent[i].DeletedAt != nil {
@@ -1343,7 +1428,62 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		obtainPresent[i].DeletedAt = &requestAt
 		v := obtainPresent[i]
 
-		_, _, _, err = h.obtainItem(tx, v.UserID, v.ItemID, v.ItemType, int64(v.Amount), requestAt)
+		var err error
+		switch v.ItemType {
+		case 1: // coin
+			obtainCoin += v.Amount
+		case 2: // card(ハンマー)
+			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
+			item := new(ItemMaster)
+			if err := tx.Get(item, query, v.ItemID, v.ItemType); err != nil {
+				if err == sql.ErrNoRows {
+					err = ErrItemNotFound
+				}
+				break
+			}
+
+			cID, err := h.generateID()
+			if err != nil {
+				break
+			}
+			card := &UserCard{
+				ID:           cID,
+				UserID:       userID,
+				CardID:       item.ID,
+				AmountPerSec: *item.AmountPerSec,
+				Level:        1,
+				TotalExp:     0,
+				CreatedAt:    requestAt,
+				UpdatedAt:    requestAt,
+			}
+			obtainCards = append(obtainCards, card)
+		case 3, 4: // 強化素材
+			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
+			item := new(ItemMaster)
+			if err = tx.Get(item, query, v.ItemID, v.ItemType); err != nil {
+				if err == sql.ErrNoRows {
+					err = ErrItemNotFound
+				}
+				break
+			}
+			uitemID, err := h.generateID()
+			if err != nil {
+				break
+			}
+			uitem := &UserItem{
+				ID:        uitemID,
+				UserID:    userID,
+				ItemType:  item.ItemType,
+				ItemID:    item.ID,
+				Amount:    int(v.Amount),
+				CreatedAt: requestAt,
+				UpdatedAt: requestAt,
+			}
+			obtainItems = append(obtainItems, uitem)
+		default:
+			err = ErrInvalidItemType
+		}
+
 		if err != nil {
 			if err == ErrUserNotFound || err == ErrItemNotFound {
 				return errorResponse(c, http.StatusNotFound, err)
@@ -1352,6 +1492,59 @@ func (h *Handler) receivePresent(c echo.Context) error {
 				return errorResponse(c, http.StatusBadRequest, err)
 			}
 			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+	}
+
+	if obtainCoin > 0 {
+		query := "UPDATE users SET isu_coin=isu_coin+? WHERE id=?"
+		if _, err := tx.Exec(query, obtainCoin, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+	}
+
+	if len(obtainCards) > 0 {
+		query := "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (:user_id, :card_id, :amount_per_sec, :level, :total_exp, :created_at, :updated_at)"
+		if _, err := tx.NamedExec(query, obtainCards); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+	}
+
+	if len(obtainItems) > 0 {
+		querySelect := "SELECT id FROM user_items WHERE user_id=:user_id AND item_id=:item_id"
+		stmtSelect, err := tx.PrepareNamed(querySelect)
+		if err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		defer stmtSelect.Close()
+
+		queryInsert := "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (:user_id, :item_id, :item_type, :amount, :created_at, :updated_at)"
+		stmtInsert, err := tx.PrepareNamed(queryInsert)
+		if err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		defer stmtInsert.Close()
+
+		queryUpdate := "UPDATE user_items SET amount=amount+:amount,updated_at=:updated_at WHERE user_id=:user_id AND item_id=:item_id"
+		stmtUpdate, err := tx.PrepareNamed(queryUpdate)
+		if err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		defer stmtUpdate.Close()
+
+		for _, userItem := range obtainItems {
+			var id int
+			if err := stmtSelect.Get(&id, userItem); err != nil {
+				if err != sql.ErrNoRows {
+					return errorResponse(c, http.StatusInternalServerError, err)
+				}
+				if _, err := stmtInsert.Exec(userItem); err != nil {
+					return errorResponse(c, http.StatusInternalServerError, err)
+				}
+			} else {
+				if _, err := stmtUpdate.Exec(userItem); err != nil {
+					return errorResponse(c, http.StatusInternalServerError, err)
+				}
+			}
 		}
 	}
 

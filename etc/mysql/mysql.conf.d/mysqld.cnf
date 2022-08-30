@@ -82,7 +82,7 @@ max_binlog_size   = 100M
 # binlog_ignore_db	= include_database_name
 disable-log-bin
 
-innodb_buffer_pool_size=1G
+innodb_buffer_pool_size=2G
 
 innodb_doublewrite = 0
 innodb_flush_log_at_trx_commit = 0
