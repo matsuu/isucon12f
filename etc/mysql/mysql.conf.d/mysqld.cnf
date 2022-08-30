@@ -44,8 +44,8 @@ key_buffer_size		= 16M
 myisam-recover-options  = BACKUP
 
 # max_connections        = 151
-max_connections        = 600
-thread_cache_size = 600
+max_connections        = 151
+thread_cache_size = 128
 table_open_cache = 16000
 
 # table_open_cache       = 4000
@@ -65,6 +65,7 @@ table_open_cache = 16000
 log_error = /var/log/mysql/error.log
 #
 # Here you can see queries with especially long duration
+performance_schema = 0
 slow_query_log		= 1
 slow_query_log_file	= /var/log/mysql/slow.log
 long_query_time = 0

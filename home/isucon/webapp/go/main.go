@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	redis "github.com/go-redis/redis/v8"
 	"github.com/go-sql-driver/mysql"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
@@ -53,8 +55,9 @@ var (
 )
 
 type Handler struct {
-	DB  *sqlx.DB
-	DBs []*sqlx.DB
+	DB    *sqlx.DB
+	DBs   []*sqlx.DB
+	Redis *redis.Client
 }
 
 func (h *Handler) DBU(userID int64) *sqlx.DB {
@@ -76,6 +79,9 @@ func main() {
 	h := &Handler{
 		DB:  nil,
 		DBs: make([]*sqlx.DB, 0),
+		Redis: redis.NewClient(&redis.Options{
+			Addr: "localhost:6379",
+		}),
 	}
 
 	// connect db
@@ -183,20 +189,6 @@ func (h *Handler) apiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		c.Set("requestTime", requestAt.Unix())
 
 		// マスタ確認
-		/*
-			query := "SELECT * FROM version_masters WHERE status=1"
-			masterVersion := new(VersionMaster)
-			if err := h.DB.Get(masterVersion, query); err != nil {
-				if err == sql.ErrNoRows {
-					return errorResponse(c, http.StatusNotFound, fmt.Errorf("active master version is not found"))
-				}
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
-
-			if masterVersion.MasterVersion != c.Request().Header.Get("x-master-version") {
-				return errorResponse(c, http.StatusUnprocessableEntity, ErrInvalidMasterVersion)
-			}
-		*/
 		v, _ := mapMasterVersion.Load(1)
 		masterVersion := v.(string)
 
@@ -242,22 +234,30 @@ func (h *Handler) checkSessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc
 			return errorResponse(c, http.StatusInternalServerError, ErrGetRequestTime)
 		}
 
-		userSession := new(Session)
-		query := "SELECT * FROM user_sessions WHERE session_id=?"
-		if err := h.DB.Get(userSession, query, sessID); err != nil {
-			if err == sql.ErrNoRows {
+		ctx := context.TODO()
+		userSession, err := h.Redis.HGetAll(ctx, "session_"+sessID).Result()
+		if err != nil {
+			if err == redis.Nil {
 				return errorResponse(c, http.StatusUnauthorized, ErrUnauthorized)
 			}
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
-
-		if userSession.UserID != userID {
+		if len(userSession) == 0 {
+			return errorResponse(c, http.StatusUnauthorized, ErrUnauthorized)
+		}
+		if userSession["user_id"] != strconv.Itoa(int(userID)) {
 			return errorResponse(c, http.StatusForbidden, ErrForbidden)
 		}
 
-		if userSession.ExpiredAt < requestAt {
-			query = "DELETE FROM user_sessions WHERE session_id=?"
-			if _, err = h.DB.Exec(query, requestAt, sessID); err != nil {
+		expiredAt, err := strconv.ParseInt(userSession["expired_at"], 10, 64)
+		if err != nil {
+			return errorResponse(c, http.StatusUnauthorized, ErrExpiredSession)
+		}
+		if expiredAt < requestAt {
+			if err := h.Redis.Del(ctx, "session_"+sessID).Err(); err != nil {
+				return errorResponse(c, http.StatusInternalServerError, err)
+			}
+			if err := h.Redis.SRem(ctx, "user_"+userSession["user_id"]).Err(); err != nil {
 				return errorResponse(c, http.StatusInternalServerError, err)
 			}
 			return errorResponse(c, http.StatusUnauthorized, ErrExpiredSession)
@@ -642,6 +642,14 @@ func initialize(c echo.Context) error {
 	mapMasterVersion = sync.Map{}
 	mapMasterVersion.Store(1, masterVersion)
 
+	client := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+	ctx := context.TODO()
+	if err := client.FlushAll(ctx).Err(); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+
 	return successResponse(c, &InitializeResponse{
 		Language: "go",
 	})
@@ -794,8 +802,11 @@ func (h *Handler) createUser(c echo.Context) error {
 		UpdatedAt: requestAt,
 		ExpiredAt: requestAt + 86400,
 	}
-	query = "INSERT INTO user_sessions(user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?)"
-	if _, err = h.DB.Exec(query, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
+	ctx := context.TODO()
+	if err := h.Redis.HSet(ctx, "session_"+sess.SessionID, "user_id", sess.UserID, "expired_at", sess.ExpiredAt).Err(); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	if err := h.Redis.SAdd(ctx, fmt.Sprintf("user_%d", sess.UserID), sess.SessionID).Err(); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
@@ -872,11 +883,16 @@ func (h *Handler) login(c echo.Context) error {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	// sessionを更新
-	// query = "DELETE FROM user_sessions WHERE user_id=?"
-	// if _, err = tx.Exec(query, req.UserID); err != nil {
-	// 	return errorResponse(c, http.StatusInternalServerError, err)
-	// }
+	ctx := context.TODO()
+	sessionIds, err := h.Redis.SMembers(ctx, fmt.Sprintf("user_%d", req.UserID)).Result()
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	for _, sessionId := range sessionIds {
+		if err := h.Redis.Del(ctx, "session_"+sessionId).Err(); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+	}
 	sessID, err := generateUUID()
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
@@ -888,10 +904,11 @@ func (h *Handler) login(c echo.Context) error {
 		UpdatedAt: requestAt,
 		ExpiredAt: requestAt + 86400,
 	}
-	// query = "UPDATE user_sessions SET session_id=?, created_at=?, updated_at=?, expired_at=? WHERE user_id = ?"
-	// if _, err = tx.Exec(query, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt, sess.UserID); err != nil {
-	query = "INSERT INTO user_sessions(user_id, session_id, created_at, updated_at, expired_at) VALUES (?, ?, ?, ?, ?)"
-	if _, err = h.DB.Exec(query, sess.UserID, sess.SessionID, sess.CreatedAt, sess.UpdatedAt, sess.ExpiredAt); err != nil {
+
+	if err := h.Redis.HSet(ctx, "session_"+sess.SessionID, "user_id", sess.UserID, "expired_at", sess.ExpiredAt).Err(); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	if err := h.Redis.SAdd(ctx, fmt.Sprintf("user_%d", sess.UserID), sess.SessionID).Err(); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 

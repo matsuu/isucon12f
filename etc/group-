@@ -59,3 +59,4 @@ lxd:x:119:ubuntu
 ubuntu:x:1000:
 isucon:x:1100:
 isuadmin:x:1200:
+mysql:x:120:

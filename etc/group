@@ -60,3 +60,4 @@ ubuntu:x:1000:
 isucon:x:1100:
 isuadmin:x:1200:
 mysql:x:120:
+redis:x:121:
