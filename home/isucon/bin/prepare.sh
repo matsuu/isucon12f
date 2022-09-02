@@ -36,13 +36,9 @@ for h in `seq 242 245` ; do
   ssh $ip sudo truncate -s 0 "${mysql_slow_log}"
 done
 
-
 # nginx
 sudo truncate -s 0 "${nginx_access_log}"
 #sudo truncate -s 0 "${nginx_error_log}"
 # sudo systemctl reload nginx
 
-# cleanup
-rm -f "${result_dir}"/*.* 
- 
 echo "OK"

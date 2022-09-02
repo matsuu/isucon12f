@@ -90,3 +90,4 @@ innodb_flush_log_at_timeout = 3
 
 innodb_log_group_home_dir = /dev/shm
 innodb_redo_log_capacity = 128M
+skip_name_resolve = 1

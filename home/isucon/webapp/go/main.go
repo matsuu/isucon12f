@@ -52,6 +52,7 @@ var (
 	dbHosts = []string{"133.152.6.242", "133.152.6.243", "133.152.6.244", "133.152.6.245"}
 
 	mapMasterVersion sync.Map
+	mapItemMasters   sync.Map
 )
 
 type Handler struct {
@@ -105,6 +106,16 @@ func main() {
 	}
 	mapMasterVersion = sync.Map{}
 	mapMasterVersion.Store(1, masterVersion)
+
+	query = "SELECT * FROM item_masters"
+	var itemMasters []*ItemMaster
+	if err := h.DB.Select(&itemMasters, query); err != nil {
+		e.Logger.Fatalf("failed to select itemMasters: %v", err)
+	}
+	mapItemMasters = sync.Map{}
+	for _, itemMaster := range itemMasters {
+		mapItemMasters.Store(itemMaster.ID, itemMaster)
+	}
 
 	// setting server
 	e.Server.Addr = fmt.Sprintf(":%v", "8080")
@@ -371,41 +382,9 @@ func (h *Handler) loginProcess(tx *sqlx.Tx, userID int64, requestAt int64) (*Use
 	}
 
 	if len(bonusItems) > 0 {
-		querySelect := "SELECT id FROM user_items WHERE user_id=:user_id AND item_id=:item_id"
-		stmtSelect, err := tx.PrepareNamed(querySelect)
-		if err != nil {
+		query := "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (:user_id, :item_id, :item_type, :amount, :created_at, :updated_at) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount), updated_at=VALUES(updated_at)"
+		if _, err := tx.NamedExec(query, bonusItems); err != nil {
 			return nil, nil, nil, err
-		}
-		defer stmtSelect.Close()
-
-		queryInsert := "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (:user_id, :item_id, :item_type, :amount, :created_at, :updated_at)"
-		stmtInsert, err := tx.PrepareNamed(queryInsert)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		defer stmtInsert.Close()
-
-		queryUpdate := "UPDATE user_items SET amount=amount+:amount,updated_at=:updated_at WHERE user_id=:user_id AND item_id=:item_id"
-		stmtUpdate, err := tx.PrepareNamed(queryUpdate)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		defer stmtUpdate.Close()
-
-		for _, userItem := range bonusItems {
-			var id int
-			if err := stmtSelect.Get(&id, userItem); err != nil {
-				if err != sql.ErrNoRows {
-					return nil, nil, nil, err
-				}
-				if _, err := stmtInsert.Exec(userItem); err != nil {
-					return nil, nil, nil, err
-				}
-			} else {
-				if _, err := stmtUpdate.Exec(userItem); err != nil {
-					return nil, nil, nil, err
-				}
-			}
 		}
 	}
 
@@ -493,21 +472,17 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 		case 1: // coin
 			obtainCoin += rewardItem.Amount
 		case 2: // card(ハンマー)
-			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-			item := new(ItemMaster)
-			if err := tx.Get(item, query, rewardItem.ItemID, rewardItem.ItemType); err != nil {
-				if err == sql.ErrNoRows {
-					return 0, nil, nil, nil, ErrItemNotFound
-				}
-				return 0, nil, nil, nil, err
+			var item *ItemMaster
+			if vv, loaded := mapItemMasters.Load(rewardItem.ItemID); loaded {
+				item = vv.(*ItemMaster)
+			} else {
+				return 0, nil, nil, nil, ErrItemNotFound
+			}
+			if item.ItemType != rewardItem.ItemType {
+				return 0, nil, nil, nil, ErrItemNotFound
 			}
 
-			cID, err := h.generateID()
-			if err != nil {
-				return 0, nil, nil, nil, err
-			}
 			card := &UserCard{
-				ID:           cID,
 				UserID:       userID,
 				CardID:       item.ID,
 				AmountPerSec: *item.AmountPerSec,
@@ -518,20 +493,17 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 			}
 			obtainCards = append(obtainCards, card)
 		case 3, 4: // 強化素材
-			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-			item := new(ItemMaster)
-			if err := tx.Get(item, query, rewardItem.ItemID, rewardItem.ItemType); err != nil {
-				if err == sql.ErrNoRows {
-					return 0, nil, nil, nil, ErrItemNotFound
-				}
-				return 0, nil, nil, nil, err
+			var item *ItemMaster
+			if vv, loaded := mapItemMasters.Load(rewardItem.ItemID); loaded {
+				item = vv.(*ItemMaster)
+			} else {
+				return 0, nil, nil, nil, ErrItemNotFound
 			}
-			uitemID, err := h.generateID()
-			if err != nil {
-				return 0, nil, nil, nil, err
+			if item.ItemType != rewardItem.ItemType {
+				return 0, nil, nil, nil, ErrItemNotFound
 			}
+
 			uitem := &UserItem{
-				ID:        uitemID,
 				UserID:    userID,
 				ItemType:  item.ItemType,
 				ItemID:    item.ID,
@@ -628,70 +600,6 @@ func (h *Handler) obtainPresent(tx *sqlx.Tx, userID int64, requestAt int64) ([]*
 	return obtainPresents, nil
 }
 
-// obtainItem アイテム付与処理
-func (h *Handler) obtainItem(tx *sqlx.Tx, userID, itemID int64, itemType int, obtainAmount int64, requestAt int64) ([]int64, []*UserCard, []*UserItem, error) {
-	obtainCoins := make([]int64, 0)
-	obtainCards := make([]*UserCard, 0)
-	obtainItems := make([]*UserItem, 0)
-
-	switch itemType {
-	case 1: // coin
-		obtainCoins = append(obtainCoins, obtainAmount)
-	case 2: // card(ハンマー)
-		query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-		item := new(ItemMaster)
-		if err := tx.Get(item, query, itemID, itemType); err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil, nil, ErrItemNotFound
-			}
-			return nil, nil, nil, err
-		}
-
-		cID, err := h.generateID()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		card := &UserCard{
-			ID:           cID,
-			UserID:       userID,
-			CardID:       item.ID,
-			AmountPerSec: *item.AmountPerSec,
-			Level:        1,
-			TotalExp:     0,
-			CreatedAt:    requestAt,
-			UpdatedAt:    requestAt,
-		}
-		obtainCards = append(obtainCards, card)
-	case 3, 4: // 強化素材
-		query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-		item := new(ItemMaster)
-		if err := tx.Get(item, query, itemID, itemType); err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil, nil, ErrItemNotFound
-			}
-			return nil, nil, nil, err
-		}
-		uitemID, err := h.generateID()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		uitem := &UserItem{
-			ID:        uitemID,
-			UserID:    userID,
-			ItemType:  item.ItemType,
-			ItemID:    item.ID,
-			Amount:    int(obtainAmount),
-			CreatedAt: requestAt,
-			UpdatedAt: requestAt,
-		}
-		obtainItems = append(obtainItems, uitem)
-	default:
-		return nil, nil, nil, ErrInvalidItemType
-	}
-
-	return obtainCoins, obtainCards, obtainItems, nil
-}
-
 // initialize 初期化処理
 // POST /initialize
 func initialize(c echo.Context) error {
@@ -722,6 +630,16 @@ func initialize(c echo.Context) error {
 	}
 	mapMasterVersion = sync.Map{}
 	mapMasterVersion.Store(1, masterVersion)
+
+	query = "SELECT * FROM item_masters"
+	var itemMasters []*ItemMaster
+	if err := dbx.Select(&itemMasters, query); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	mapItemMasters = sync.Map{}
+	for _, itemMaster := range itemMasters {
+		mapItemMasters.Store(itemMaster.ID, itemMaster)
+	}
 
 	client := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
@@ -767,7 +685,11 @@ func (h *Handler) createUser(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
-	tx, err := h.DBU(userID).Beginx()
+	ctx := context.TODO()
+	opt := &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+	}
+	tx, err := h.DBU(userID).BeginTxx(ctx, opt)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
@@ -810,13 +732,12 @@ func (h *Handler) createUser(c echo.Context) error {
 	}
 
 	// 初期デッキ付与
-	initCard := new(ItemMaster)
-	query = "SELECT * FROM item_masters WHERE id=?"
-	if err = tx.Get(initCard, query, 2); err != nil {
-		if err == sql.ErrNoRows {
-			return errorResponse(c, http.StatusNotFound, ErrItemNotFound)
-		}
-		return errorResponse(c, http.StatusInternalServerError, err)
+	var initCard *ItemMaster
+	var id int64 = 2
+	if vv, loaded := mapItemMasters.Load(id); loaded {
+		initCard = vv.(*ItemMaster)
+	} else {
+		return errorResponse(c, http.StatusNotFound, ErrItemNotFound)
 	}
 
 	initCards := make([]*UserCard, 0, 3)
@@ -886,7 +807,6 @@ func (h *Handler) createUser(c echo.Context) error {
 		UpdatedAt: requestAt,
 		ExpiredAt: requestAt + 86400,
 	}
-	ctx := context.TODO()
 	if err := h.Redis.HSet(ctx, "session_"+sess.SessionID, "user_id", sess.UserID, "expired_at", sess.ExpiredAt).Err(); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
@@ -961,13 +881,16 @@ func (h *Handler) login(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
-	tx, err := h.DBU(user.ID).Beginx()
+	ctx := context.TODO()
+	opt := &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+	}
+	tx, err := h.DBU(user.ID).BeginTxx(ctx, opt)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	ctx := context.TODO()
 	sessionIds, err := h.Redis.SMembers(ctx, fmt.Sprintf("user_%d", req.UserID)).Result()
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
@@ -1437,21 +1360,19 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		case 1: // coin
 			obtainCoin += v.Amount
 		case 2: // card(ハンマー)
-			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-			item := new(ItemMaster)
-			if err := tx.Get(item, query, v.ItemID, v.ItemType); err != nil {
-				if err == sql.ErrNoRows {
-					err = ErrItemNotFound
-				}
+			var item *ItemMaster
+			if vv, loaded := mapItemMasters.Load(v.ItemID); loaded {
+				item = vv.(*ItemMaster)
+			} else {
+				err = ErrItemNotFound
+				break
+			}
+			if item.ItemType != v.ItemType {
+				err = ErrItemNotFound
 				break
 			}
 
-			cID, err := h.generateID()
-			if err != nil {
-				break
-			}
 			card := &UserCard{
-				ID:           cID,
 				UserID:       userID,
 				CardID:       item.ID,
 				AmountPerSec: *item.AmountPerSec,
@@ -1462,20 +1383,19 @@ func (h *Handler) receivePresent(c echo.Context) error {
 			}
 			obtainCards = append(obtainCards, card)
 		case 3, 4: // 強化素材
-			query := "SELECT * FROM item_masters WHERE id=? AND item_type=?"
-			item := new(ItemMaster)
-			if err = tx.Get(item, query, v.ItemID, v.ItemType); err != nil {
-				if err == sql.ErrNoRows {
-					err = ErrItemNotFound
-				}
+			var item *ItemMaster
+			if vv, loaded := mapItemMasters.Load(v.ItemID); loaded {
+				item = vv.(*ItemMaster)
+			} else {
+				err = ErrItemNotFound
 				break
 			}
-			uitemID, err := h.generateID()
-			if err != nil {
+			if item.ItemType != v.ItemType {
+				err = ErrItemNotFound
 				break
 			}
+
 			uitem := &UserItem{
-				ID:        uitemID,
 				UserID:    userID,
 				ItemType:  item.ItemType,
 				ItemID:    item.ID,

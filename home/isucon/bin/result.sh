@@ -8,6 +8,9 @@ echo "# Analyze"
 
 . /tmp/prepared_env
 
+# cleanup
+rm -f "${result_dir}"/*.*
+
 #mkdir -p "${data_dir}"
 #sudo journalctl --since="${prepared_time}" | gzip -9c > "${data_dir}/journal.log.gz"
 #sudo cat "${nginx_access_log}" | gzip -9c > "${data_dir}/nginx_access.log.gz"

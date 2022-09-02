@@ -294,6 +294,12 @@ func (h *Handler) adminUpdateMaster(c echo.Context) error {
 		if _, err = tx.NamedExec(query, data); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
+		query = "SELECT * from item_masters WHERE id=?"
+		var itemMaster ItemMaster
+		if err := tx.Get(&itemMaster, query); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		mapItemMasters.Store(itemMaster.ID, &itemMaster)
 	} else {
 		c.Logger().Debug("Skip Update Master: itemMaster")
 	}
