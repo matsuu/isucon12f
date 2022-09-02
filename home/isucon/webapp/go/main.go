@@ -433,8 +433,8 @@ func isCompleteTodayLogin(lastActivatedAt, requestAt time.Time) bool {
 func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (int64, []*UserCard, []*UserItem, []*UserLoginBonus, error) {
 	// login bonus masterから有効なログインボーナスを取得
 	loginBonuses := make([]*LoginBonusMaster, 0)
-	query := "SELECT * FROM login_bonus_masters WHERE start_at <= ? AND end_at >= ?"
-	if err := tx.Select(&loginBonuses, query, requestAt, requestAt); err != nil {
+	query := "SELECT * FROM login_bonus_masters WHERE start_at <= ? AND id <> 3"
+	if err := tx.Select(&loginBonuses, query, requestAt); err != nil {
 		return 0, nil, nil, nil, err
 	}
 
@@ -1199,9 +1199,9 @@ func (h *Handler) drawGacha(c echo.Context) error {
 	}
 
 	// gachaIDからガチャマスタの取得
-	query = "SELECT * FROM gacha_masters WHERE id=? AND start_at <= ? AND end_at >= ?"
+	query = "SELECT * FROM gacha_masters WHERE id=? AND start_at <= ?"
 	gachaInfo := new(GachaMaster)
-	if err = h.DBU(user.ID).Get(gachaInfo, query, gachaID, requestAt, requestAt); err != nil {
+	if err = h.DBU(user.ID).Get(gachaInfo, query, gachaID, requestAt); err != nil {
 		if sql.ErrNoRows == err {
 			return errorResponse(c, http.StatusNotFound, fmt.Errorf("not found gacha"))
 		}
@@ -1401,7 +1401,11 @@ func (h *Handler) receivePresent(c echo.Context) error {
 		})
 	}
 
-	tx, err := h.DBU(userID).Beginx()
+	ctx := context.TODO()
+	opt := &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+	}
+	tx, err := h.DBU(userID).BeginTxx(ctx, opt)
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
@@ -1510,41 +1514,9 @@ func (h *Handler) receivePresent(c echo.Context) error {
 	}
 
 	if len(obtainItems) > 0 {
-		querySelect := "SELECT id FROM user_items WHERE user_id=:user_id AND item_id=:item_id"
-		stmtSelect, err := tx.PrepareNamed(querySelect)
-		if err != nil {
+		query := "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (:user_id, :item_id, :item_type, :amount, :created_at, :updated_at) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount),updated_at=VALUES(updated_at)"
+		if _, err := tx.NamedExec(query, obtainItems); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
-		}
-		defer stmtSelect.Close()
-
-		queryInsert := "INSERT INTO user_items(user_id, item_id, item_type, amount, created_at, updated_at) VALUES (:user_id, :item_id, :item_type, :amount, :created_at, :updated_at)"
-		stmtInsert, err := tx.PrepareNamed(queryInsert)
-		if err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
-		defer stmtInsert.Close()
-
-		queryUpdate := "UPDATE user_items SET amount=amount+:amount,updated_at=:updated_at WHERE user_id=:user_id AND item_id=:item_id"
-		stmtUpdate, err := tx.PrepareNamed(queryUpdate)
-		if err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
-		defer stmtUpdate.Close()
-
-		for _, userItem := range obtainItems {
-			var id int
-			if err := stmtSelect.Get(&id, userItem); err != nil {
-				if err != sql.ErrNoRows {
-					return errorResponse(c, http.StatusInternalServerError, err)
-				}
-				if _, err := stmtInsert.Exec(userItem); err != nil {
-					return errorResponse(c, http.StatusInternalServerError, err)
-				}
-			} else {
-				if _, err := stmtUpdate.Exec(userItem); err != nil {
-					return errorResponse(c, http.StatusInternalServerError, err)
-				}
-			}
 		}
 	}
 
