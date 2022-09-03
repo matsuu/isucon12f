@@ -11,23 +11,8 @@
  
 -------- Log file Recommendations ------------------------------------------------------------------
 [OK] Log file /var/log/mysql/error.log exists
-[--] Log file: /var/log/mysql/error.log (20K)
-[OK] Log file /var/log/mysql/error.log is not empty
-[OK] Log file /var/log/mysql/error.log is smaller than 32 Mb
-[OK] Log file /var/log/mysql/error.log is readable.
-[!!] /var/log/mysql/error.log contains 140 warning(s).
-[OK] /var/log/mysql/error.log doesn't contain any error.
-[--] 6 start(s) detected in /var/log/mysql/error.log
-[--] 1) 2022-09-02T15:58:31.308653Z 0 [System] [MY-010931] [Server] /usr/sbin/mysqld: ready for connections. Version: '8.0.30-0ubuntu0.22.04.1'  socket: '/var/run/mysqld/mysqld.sock'  port: 3306  (Ubuntu).
-[--] 2) 2022-09-02T15:58:31.308511Z 0 [System] [MY-011323] [Server] X Plugin ready for connections. Bind-address: '127.0.0.1' port: 33060, socket: /var/run/mysqld/mysqlx.sock
-[--] 3) 2022-09-02T14:20:14.620961Z 0 [System] [MY-010931] [Server] /usr/sbin/mysqld: ready for connections. Version: '8.0.30-0ubuntu0.22.04.1'  socket: '/var/run/mysqld/mysqld.sock'  port: 3306  (Ubuntu).
-[--] 4) 2022-09-02T14:20:14.620865Z 0 [System] [MY-011323] [Server] X Plugin ready for connections. Bind-address: '127.0.0.1' port: 33060, socket: /var/run/mysqld/mysqlx.sock
-[--] 5) 2022-09-02T13:33:17.968230Z 0 [System] [MY-010931] [Server] /usr/sbin/mysqld: ready for connections. Version: '8.0.30-0ubuntu0.22.04.1'  socket: '/var/run/mysqld/mysqld.sock'  port: 3306  (Ubuntu).
-[--] 6) 2022-09-02T13:33:17.968186Z 0 [System] [MY-011323] [Server] X Plugin ready for connections. Bind-address: '127.0.0.1' port: 33060, socket: /var/run/mysqld/mysqlx.sock
-[--] 3 shutdown(s) detected in /var/log/mysql/error.log
-[--] 1) 2022-09-02T15:58:30.460402Z 0 [System] [MY-010910] [Server] /usr/sbin/mysqld: Shutdown complete (mysqld 8.0.30-0ubuntu0.22.04.1)  (Ubuntu).
-[--] 2) 2022-09-02T14:20:13.932850Z 0 [System] [MY-010910] [Server] /usr/sbin/mysqld: Shutdown complete (mysqld 8.0.30-0ubuntu0.22.04.1)  (Ubuntu).
-[--] 3) 2022-09-02T13:33:17.051874Z 0 [System] [MY-010910] [Server] /usr/sbin/mysqld: Shutdown complete (mysqld 8.0.30-0ubuntu0.22.04.1)  (Ubuntu).
+[--] Log file: /var/log/mysql/error.log (0B)
+[--] Log file /var/log/mysql/error.log is empty. Assuming log-rotation. Use --server-log={file} for explicit file
  
 -------- Storage Engine Statistics -----------------------------------------------------------------
 [--] Status: +ARCHIVE +BLACKHOLE +CSV -FEDERATED +InnoDB +MEMORY +MRG_MYISAM +MyISAM +PERFORMANCE_SCHEMA 
@@ -51,8 +36,8 @@
 [OK] NO SECURITY CVE FOUND FOR YOUR VERSION
  
 -------- Performance Metrics -----------------------------------------------------------------------
-[--] Up for: 5m 7s (222K q [724.873 qps], 49 conn, TX: 128M, RX: 96M)
-[--] Reads / Writes: 59% / 41%
+[--] Up for: 11h 46m 27s (1M q [43.399 qps], 928 conn, TX: 1G, RX: 1G)
+[--] Reads / Writes: 57% / 43%
 [--] Binary logging is disabled
 [--] Physical Memory     : 3.8G
 [--] Max MySQL memory    : 11.8G
@@ -60,21 +45,21 @@
 [--] Total buffers: 2.0G global + 65.9M per thread (151 max threads)
 [--] P_S Max memory usage: 0B
 [--] Galera GCache Max memory usage: 0B
-[!!] Maximum reached memory usage: 4.0G (103.78% of installed RAM)
+[!!] Maximum reached memory usage: 5.8G (152.46% of installed RAM)
 [!!] Maximum possible memory usage: 11.8G (306.91% of installed RAM)
 [!!] Overall possible memory usage with other process exceeded memory
-[!!] Slow queries: 99% (222K/222K)
-[OK] Highest usage of available connections: 19% (30/151)
-[OK] Aborted connections: 0.00%  (0/49)
+[!!] Slow queries: 99% (1M/1M)
+[OK] Highest usage of available connections: 39% (59/151)
+[OK] Aborted connections: 0.11%  (1/928)
 [--] Query cache has been removed since MySQL 8.0
-[OK] Sorts requiring temporary tables: 0% (0 temp sorts / 80K sorts)
+[OK] Sorts requiring temporary tables: 0% (0 temp sorts / 658K sorts)
 [OK] No joins without indexes
-[OK] Temporary tables created on disk: 0% (0 on disk / 5 total)
-[!!] Thread cache hit rate: 38% (30 created / 49 connections)
-[OK] Table cache hit rate: 99% (230K hits / 230K requests)
+[OK] Temporary tables created on disk: 0% (0 on disk / 67 total)
+[OK] Thread cache hit rate: 93% (59 created / 928 connections)
+[OK] Table cache hit rate: 99% (1M hits / 1M requests)
 [OK] table_definition_cache (2000) is greater than number of tables (349)
 [OK] Open file limit used: 0% (1/10K)
-[OK] Table locks acquired immediately: 100% (5 immediate / 5 locks)
+[OK] Table locks acquired immediately: 100% (46 immediate / 46 locks)
  
 -------- Performance schema ------------------------------------------------------------------------
 [!!] Performance_schema should be activated.
@@ -95,7 +80,7 @@
 [!!] InnoDB buffer pool instances: 8
 [--] Number of InnoDB Buffer Pool Chunk: 16 for 8 Buffer Pool Instance(s)
 [OK] Innodb_buffer_pool_size aligned with Innodb_buffer_pool_chunk_size & Innodb_buffer_pool_instances
-[OK] InnoDB Read buffer efficiency: 99.86% (18798809 hits/ 18825364 total)
+[OK] InnoDB Read buffer efficiency: 99.99% (202419425 hits/ 202447206 total)
 [!!] InnoDB Write Log efficiency: 0% (0 hits/ 0 total)
 [OK] InnoDB log waits: 0% (0 waits / 0 writes)
  
@@ -122,7 +107,6 @@
  
 -------- Recommendations ---------------------------------------------------------------------------
 General recommendations:
-    Check warning line(s) in /var/log/mysql/error.log file
     Run OPTIMIZE TABLE to defragment tables for better performance
       OPTIMIZE TABLE `isucon`.`user_presents`; -- can free 202 MB
     Total freed space after theses OPTIMIZE TABLE : 202 Mb
@@ -135,7 +119,6 @@ General recommendations:
 Variables to adjust:
   *** MySQL's maximum memory usage is dangerously high ***
   *** Add RAM before increasing MySQL buffer variables ***
-    thread_cache_size (> 128)
     performance_schema=ON
     key_buffer_size=0
     innodb_log_file_size should be (=256M) if possible, so InnoDB total log files size equals 25% of buffer pool size.

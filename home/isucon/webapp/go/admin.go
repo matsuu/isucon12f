@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
@@ -294,12 +295,14 @@ func (h *Handler) adminUpdateMaster(c echo.Context) error {
 		if _, err = tx.NamedExec(query, data); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
-		query = "SELECT * from item_masters WHERE id=?"
-		var itemMaster ItemMaster
-		if err := tx.Get(&itemMaster, query); err != nil {
+		query = "SELECT * from item_masters"
+		var itemMasters []*ItemMaster
+		if err := tx.Select(&itemMasters, query); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
-		mapItemMasters.Store(itemMaster.ID, &itemMaster)
+		for _, itemMaster := range itemMasters {
+			mapItemMasters.Store(itemMaster.ID, itemMaster)
+		}
 	} else {
 		c.Logger().Debug("Skip Update Master: itemMaster")
 	}
@@ -370,6 +373,20 @@ func (h *Handler) adminUpdateMaster(c echo.Context) error {
 		}, " ")
 		if _, err = tx.NamedExec(query, data); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+
+		query = "SELECT * FROM gacha_item_masters"
+		var gachaItemList []*GachaItemMaster
+		if err := tx.Select(&gachaItemList, query); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		mapGachaItemMasters = sync.Map{}
+		for _, v := range gachaItemList {
+			s, _ := mapGachaItemMasters.LoadOrStore(v.GachaID, new([]int64))
+			sl := s.(*[]*GachaItemMaster)
+			for i := 0; i < v.Weight; i++ {
+				*sl = append(*sl, v)
+			}
 		}
 	} else {
 		c.Logger().Debug("Skip Update Master: gachaItemMaster")
@@ -541,56 +558,100 @@ func (h *Handler) adminUser(c echo.Context) error {
 		return errorResponse(c, http.StatusBadRequest, err)
 	}
 
-	query := "SELECT * FROM users WHERE id=?"
+	var wg sync.WaitGroup
+
+	wg.Add(1)
 	user := new(User)
-	if err = h.DBU(userID).Get(user, query, userID); err != nil {
-		if err == sql.ErrNoRows {
-			return errorResponse(c, http.StatusNotFound, ErrUserNotFound)
+	go func() error {
+		wg.Done()
+		query := "SELECT * FROM users WHERE id=?"
+		if err = h.DBU(userID).Get(user, query, userID); err != nil {
+			if err == sql.ErrNoRows {
+				return errorResponse(c, http.StatusNotFound, ErrUserNotFound)
+			}
+			return errorResponse(c, http.StatusInternalServerError, err)
 		}
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+		return nil
+	}()
 
-	query = "SELECT * FROM user_devices WHERE user_id=?"
+	wg.Add(1)
 	devices := make([]*UserDevice, 0)
-	if err = h.DBU(userID).Select(&devices, query, userID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	go func() error {
+		defer wg.Done()
+		query := "SELECT * FROM user_devices WHERE user_id=?"
+		if err = h.DBU(userID).Select(&devices, query, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		return nil
+	}()
 
-	query = "SELECT * FROM user_cards WHERE user_id=?"
+	wg.Add(1)
 	cards := make([]*UserCard, 0)
-	if err = h.DBU(userID).Select(&cards, query, userID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	go func() error {
+		defer wg.Done()
+		query := "SELECT * FROM user_cards WHERE user_id=?"
+		if err = h.DBU(userID).Select(&cards, query, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		return nil
+	}()
 
-	query = "SELECT * FROM user_decks WHERE user_id=?"
+	wg.Add(1)
 	decks := make([]*UserDeck, 0)
-	if err = h.DBU(userID).Select(&decks, query, userID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	go func() error {
+		defer wg.Done()
+		query := "SELECT * FROM user_decks WHERE user_id=?"
+		if err = h.DBU(userID).Select(&decks, query, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		return nil
+	}()
 
-	query = "SELECT * FROM user_items WHERE user_id=?"
+	wg.Add(1)
 	items := make([]*UserItem, 0)
-	if err = h.DBU(userID).Select(&items, query, userID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	go func() error {
+		defer wg.Done()
+		query := "SELECT * FROM user_items WHERE user_id=?"
+		if err = h.DBU(userID).Select(&items, query, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		return nil
+	}()
 
-	query = "SELECT * FROM user_login_bonuses WHERE user_id=?"
+	wg.Add(1)
 	loginBonuses := make([]*UserLoginBonus, 0)
-	if err = h.DBU(userID).Select(&loginBonuses, query, userID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	go func() error {
+		defer wg.Done()
+		query := "SELECT * FROM user_login_bonuses WHERE user_id=?"
+		if err = h.DBU(userID).Select(&loginBonuses, query, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		return nil
+	}()
 
-	query = "SELECT * FROM user_presents WHERE user_id=?"
+	wg.Add(1)
 	presents := make([]*UserPresent, 0)
-	if err = h.DBU(userID).Select(&presents, query, userID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	go func() error {
+		defer wg.Done()
+		query := "SELECT * FROM user_presents WHERE user_id=?"
+		if err = h.DBU(userID).Select(&presents, query, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		return nil
+	}()
 
-	query = "SELECT * FROM user_present_all_received_history WHERE user_id=?"
+	wg.Add(1)
 	presentHistory := make([]*UserPresentAllReceivedHistory, 0)
-	if err = h.DBU(userID).Select(&presentHistory, query, userID); err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
+	go func() error {
+		defer wg.Done()
+		query := "SELECT * FROM user_present_all_received_history WHERE user_id=?"
+		if err = h.DBU(userID).Select(&presentHistory, query, userID); err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
+		return nil
+	}()
+
+	wg.Wait()
 
 	return successResponse(c, &AdminUserResponse{
 		User:                          user,

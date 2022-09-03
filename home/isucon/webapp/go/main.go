@@ -51,8 +51,9 @@ const (
 var (
 	dbHosts = []string{"133.152.6.242", "133.152.6.243", "133.152.6.244", "133.152.6.245"}
 
-	mapMasterVersion sync.Map
-	mapItemMasters   sync.Map
+	mapMasterVersion    sync.Map
+	mapItemMasters      sync.Map
+	mapGachaItemMasters sync.Map
 )
 
 type Handler struct {
@@ -68,6 +69,7 @@ func (h *Handler) DBU(userID int64) *sqlx.DB {
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	time.Local = time.FixedZone("Local", 9*60*60)
+	uuid.EnableRandPool()
 
 	e := echo.New()
 	e.Use(middleware.Recover())
@@ -81,7 +83,7 @@ func main() {
 		DB:  nil,
 		DBs: make([]*sqlx.DB, 0),
 		Redis: redis.NewClient(&redis.Options{
-			Addr: "localhost:6379",
+			Addr: "127.0.0.1:6379",
 		}),
 	}
 
@@ -115,6 +117,20 @@ func main() {
 	mapItemMasters = sync.Map{}
 	for _, itemMaster := range itemMasters {
 		mapItemMasters.Store(itemMaster.ID, itemMaster)
+	}
+
+	query = "SELECT * FROM gacha_item_masters ORDER BY id"
+	var gachaItemList []*GachaItemMaster
+	if err := h.DB.Select(&gachaItemList, query); err != nil {
+		e.Logger.Fatalf("failed to select gachaItemMasters: %v", err)
+	}
+	mapGachaItemMasters = sync.Map{}
+	for _, v := range gachaItemList {
+		s, _ := mapGachaItemMasters.LoadOrStore(v.GachaID, new([]*GachaItemMaster))
+		sl := s.(*[]*GachaItemMaster)
+		for i := 0; i < v.Weight; i++ {
+			*sl = append(*sl, v)
+		}
 	}
 
 	// setting server
@@ -171,8 +187,8 @@ func connectDB(host string, batch bool) (*sqlx.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	dbx.SetMaxOpenConns(550)
-	dbx.SetMaxIdleConns(550)
+	dbx.SetMaxOpenConns(150)
+	dbx.SetMaxIdleConns(150)
 	return dbx, nil
 }
 
@@ -375,7 +391,7 @@ func (h *Handler) loginProcess(tx *sqlx.Tx, userID int64, requestAt int64) (*Use
 	}
 
 	if len(bonusCards) > 0 {
-		query := "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (:user_id, :card_id, :amount_per_sec, :level, :total_exp, :created_at, :updated_at)"
+		query := "INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (:id, :user_id, :card_id, :amount_per_sec, :level, :total_exp, :created_at, :updated_at)"
 		if _, err := tx.NamedExec(query, bonusCards); err != nil {
 			return nil, nil, nil, err
 		}
@@ -482,7 +498,12 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 				return 0, nil, nil, nil, ErrItemNotFound
 			}
 
+			cardID, err := h.generateID()
+			if err != nil {
+				return 0, nil, nil, nil, ErrItemNotFound
+			}
 			card := &UserCard{
+				ID:           cardID,
 				UserID:       userID,
 				CardID:       item.ID,
 				AmountPerSec: *item.AmountPerSec,
@@ -642,7 +663,7 @@ func initialize(c echo.Context) error {
 	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: "127.0.0.1:6379",
 	})
 	ctx := context.TODO()
 	if err := client.FlushAll(ctx).Err(); err != nil {
@@ -650,6 +671,20 @@ func initialize(c echo.Context) error {
 	}
 	if err := client.Set(ctx, "id", 100000000001, 0).Err(); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+
+	query = "SELECT * FROM gacha_item_masters"
+	var gachaItemList []*GachaItemMaster
+	if err := dbx.Select(&gachaItemList, query); err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	mapGachaItemMasters = sync.Map{}
+	for _, v := range gachaItemList {
+		s, _ := mapGachaItemMasters.LoadOrStore(v.GachaID, new([]*GachaItemMaster))
+		sl := s.(*[]*GachaItemMaster)
+		for i := 0; i < v.Weight; i++ {
+			*sl = append(*sl, v)
+		}
 	}
 
 	return successResponse(c, &InitializeResponse{
@@ -710,25 +745,21 @@ func (h *Handler) createUser(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
+	deviceID, err := h.generateID()
 	if err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 	userDevice := &UserDevice{
+		ID:           deviceID,
 		UserID:       user.ID,
 		PlatformID:   req.ViewerID,
 		PlatformType: req.PlatformType,
 		CreatedAt:    requestAt,
 		UpdatedAt:    requestAt,
 	}
-	query = "INSERT INTO user_devices(user_id, platform_id, platform_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
-	if res, err := tx.Exec(query, user.ID, req.ViewerID, req.PlatformType, requestAt, requestAt); err != nil {
+	query = "INSERT INTO user_devices(id, user_id, platform_id, platform_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+	if _, err := tx.Exec(query, deviceID, user.ID, req.ViewerID, req.PlatformType, requestAt, requestAt); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
-	} else {
-		id, err := res.LastInsertId()
-		if err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
-		userDevice.ID = id
 	}
 
 	// 初期デッキ付与
@@ -742,7 +773,12 @@ func (h *Handler) createUser(c echo.Context) error {
 
 	initCards := make([]*UserCard, 0, 3)
 	for i := 0; i < 3; i++ {
+		cardID, err := h.generateID()
+		if err != nil {
+			return errorResponse(c, http.StatusInternalServerError, err)
+		}
 		card := &UserCard{
+			ID:           cardID,
 			UserID:       user.ID,
 			CardID:       initCard.ID,
 			AmountPerSec: *initCard.AmountPerSec,
@@ -751,20 +787,19 @@ func (h *Handler) createUser(c echo.Context) error {
 			CreatedAt:    requestAt,
 			UpdatedAt:    requestAt,
 		}
-		query = "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-		if res, err := tx.Exec(query, card.UserID, card.CardID, card.AmountPerSec, card.Level, card.TotalExp, card.CreatedAt, card.UpdatedAt); err != nil {
+		query = "INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+		if _, err := tx.Exec(query, card.ID, card.UserID, card.CardID, card.AmountPerSec, card.Level, card.TotalExp, card.CreatedAt, card.UpdatedAt); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
-		} else {
-			id, err := res.LastInsertId()
-			if err != nil {
-				return errorResponse(c, http.StatusInternalServerError, err)
-			}
-			card.ID = id
 		}
 		initCards = append(initCards, card)
 	}
 
+	deckID, err := h.generateID()
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
 	initDeck := &UserDeck{
+		ID:        deckID,
 		UserID:    user.ID,
 		CardID1:   initCards[0].ID,
 		CardID2:   initCards[1].ID,
@@ -772,15 +807,9 @@ func (h *Handler) createUser(c echo.Context) error {
 		CreatedAt: requestAt,
 		UpdatedAt: requestAt,
 	}
-	query = "INSERT INTO user_decks(user_id, user_card_id_1, user_card_id_2, user_card_id_3, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-	if res, err := tx.Exec(query, initDeck.UserID, initDeck.CardID1, initDeck.CardID2, initDeck.CardID3, initDeck.CreatedAt, initDeck.UpdatedAt); err != nil {
+	query = "INSERT INTO user_decks(id, user_id, user_card_id_1, user_card_id_2, user_card_id_3, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+	if _, err := tx.Exec(query, initDeck.ID, initDeck.UserID, initDeck.CardID1, initDeck.CardID2, initDeck.CardID3, initDeck.CreatedAt, initDeck.UpdatedAt); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
-	} else {
-		id, err := res.LastInsertId()
-		if err != nil {
-			return errorResponse(c, http.StatusInternalServerError, err)
-		}
-		initDeck.ID = id
 	}
 
 	// ログイン処理
@@ -1003,7 +1032,7 @@ func (h *Handler) listGacha(c echo.Context) error {
 	}
 
 	// ガチャ排出アイテム取得
-	gachaDataList := make([]*GachaData, 0)
+	gachaDataList := make([]*GachaData, 0, len(gachaMasterList))
 	query = "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC"
 	for _, v := range gachaMasterList {
 		var gachaItem []*GachaItemMaster
@@ -1132,9 +1161,10 @@ func (h *Handler) drawGacha(c echo.Context) error {
 	}
 
 	// gachaItemMasterからアイテムリスト取得
-	gachaItemList := make([]*GachaItemMaster, 0)
-	err = h.DB.Select(&gachaItemList, "SELECT * FROM gacha_item_masters WHERE gacha_id=? ORDER BY id ASC", gachaID)
-	if err != nil {
+	var gachaItemList []*GachaItemMaster
+	if vv, loaded := mapGachaItemMasters.Load(gachaInfo.ID); loaded {
+		gachaItemList = *vv.(*[]*GachaItemMaster)
+	} else {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 	if len(gachaItemList) == 0 {
@@ -1142,39 +1172,12 @@ func (h *Handler) drawGacha(c echo.Context) error {
 	}
 
 	// weightの合計値を算出
-	var sum int64
-	err = h.DB.Get(&sum, "SELECT SUM(weight) FROM gacha_item_masters WHERE gacha_id=?", gachaID)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return errorResponse(c, http.StatusNotFound, err)
-		}
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
-
+	sum := int64(len(gachaItemList))
 	// random値の導出 & 抽選
-	result := make([]*GachaItemMaster, 0, gachaCount)
+	presents := make([]*UserPresent, 0, gachaCount)
 	for i := 0; i < int(gachaCount); i++ {
 		random := rand.Int63n(sum)
-		boundary := 0
-		for _, v := range gachaItemList {
-			boundary += v.Weight
-			if random < int64(boundary) {
-				result = append(result, v)
-				break
-			}
-		}
-	}
-
-	tx, err := h.DBU(user.ID).Beginx()
-	if err != nil {
-		return errorResponse(c, http.StatusInternalServerError, err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	// 直付与 => プレゼントに入れる
-	presents := make([]*UserPresent, 0, gachaCount)
-
-	for _, v := range result {
+		v := gachaItemList[random]
 		present := &UserPresent{
 			UserID:         userID,
 			SentAt:         requestAt,
@@ -1187,6 +1190,13 @@ func (h *Handler) drawGacha(c echo.Context) error {
 		}
 		presents = append(presents, present)
 	}
+
+	tx, err := h.DBU(user.ID).Beginx()
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	if len(presents) > 0 {
 		query := "INSERT INTO user_presents(user_id, sent_at, item_type, item_id, amount, present_message, created_at, updated_at) VALUES (:user_id, :sent_at, :item_type, :item_id, :amount, :present_message, :created_at, :updated_at)"
 		if res, err := tx.NamedExec(query, presents); err != nil {
@@ -1372,7 +1382,12 @@ func (h *Handler) receivePresent(c echo.Context) error {
 				break
 			}
 
+			cardID, err := h.generateID()
+			if err != nil {
+				return errorResponse(c, http.StatusInternalServerError, err)
+			}
 			card := &UserCard{
+				ID:           cardID,
 				UserID:       userID,
 				CardID:       item.ID,
 				AmountPerSec: *item.AmountPerSec,
@@ -1427,7 +1442,7 @@ func (h *Handler) receivePresent(c echo.Context) error {
 	}
 
 	if len(obtainCards) > 0 {
-		query := "INSERT INTO user_cards(user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (:user_id, :card_id, :amount_per_sec, :level, :total_exp, :created_at, :updated_at)"
+		query := "INSERT INTO user_cards(id, user_id, card_id, amount_per_sec, level, total_exp, created_at, updated_at) VALUES (:id, :user_id, :card_id, :amount_per_sec, :level, :total_exp, :created_at, :updated_at)"
 		if _, err := tx.NamedExec(query, obtainCards); err != nil {
 			return errorResponse(c, http.StatusInternalServerError, err)
 		}
@@ -1787,7 +1802,12 @@ func (h *Handler) updateDeck(c echo.Context) error {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
 
+	deckID, err := h.generateID()
+	if err != nil {
+		return errorResponse(c, http.StatusInternalServerError, err)
+	}
 	newDeck := &UserDeck{
+		ID:        deckID,
 		UserID:    userID,
 		CardID1:   req.CardIDs[0],
 		CardID2:   req.CardIDs[1],
@@ -1795,8 +1815,8 @@ func (h *Handler) updateDeck(c echo.Context) error {
 		CreatedAt: requestAt,
 		UpdatedAt: requestAt,
 	}
-	query = "INSERT INTO user_decks(user_id, user_card_id_1, user_card_id_2, user_card_id_3, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
-	if res, err := tx.Exec(query, newDeck.UserID, newDeck.CardID1, newDeck.CardID2, newDeck.CardID3, newDeck.CreatedAt, newDeck.UpdatedAt); err != nil {
+	query = "INSERT INTO user_decks(id, user_id, user_card_id_1, user_card_id_2, user_card_id_3, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+	if res, err := tx.Exec(query, newDeck.ID, newDeck.UserID, newDeck.CardID1, newDeck.CardID2, newDeck.CardID3, newDeck.CreatedAt, newDeck.UpdatedAt); err != nil {
 		return errorResponse(c, http.StatusInternalServerError, err)
 	} else {
 		id, err := res.LastInsertId()
