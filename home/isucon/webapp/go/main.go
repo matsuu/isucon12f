@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -133,7 +134,15 @@ func main() {
 	}
 
 	// setting server
-	e.Server.Addr = fmt.Sprintf(":%v", "8080")
+	sock := "/run/isucon/app.sock"
+	os.Remove(sock)
+	if l, err := net.Listen("unix", sock); err != nil {
+		e.Logger.Infof("failed to start uds: %+v", err)
+		e.Server.Addr = fmt.Sprintf(":%v", "8080")
+	} else {
+		e.Listener = l
+		os.Chmod(sock, 0666)
+	}
 
 	// e.Use(middleware.CORS())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{}))
