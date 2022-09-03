@@ -16,7 +16,7 @@
  
 -------- Storage Engine Statistics -----------------------------------------------------------------
 [--] Status: +ARCHIVE +BLACKHOLE +CSV -FEDERATED +InnoDB +MEMORY +MRG_MYISAM +MyISAM +PERFORMANCE_SCHEMA 
-[--] Data in InnoDB tables: 811.9M (Tables: 22)
+[--] Data in InnoDB tables: 811.0M (Tables: 22)
 [OK] Total fragmented tables: 0
  
 -------- Analysis Performance Metrics --------------------------------------------------------------
@@ -36,7 +36,7 @@
 [--] Skipped due to --cvefile option undefined
  
 -------- Performance Metrics -----------------------------------------------------------------------
-[--] Up for: 12h 47m 9s (4M q [104.081 qps], 1K conn, TX: 2G, RX: 2G)
+[--] Up for: 13h 14m 14s (5M q [114.223 qps], 1K conn, TX: 2G, RX: 2G)
 [--] Reads / Writes: 69% / 31%
 [--] Binary logging is disabled
 [--] Physical Memory     : 3.8G
@@ -48,18 +48,18 @@
 [!!] Maximum reached memory usage: 6.2G (162.54% of installed RAM)
 [!!] Maximum possible memory usage: 11.8G (306.91% of installed RAM)
 [!!] Overall possible memory usage with other process exceeded memory
-[!!] Slow queries: 99% (4M/4M)
+[!!] Slow queries: 99% (5M/5M)
 [OK] Highest usage of available connections: 43% (65/151)
-[OK] Aborted connections: 0.00%  (0/1008)
+[OK] Aborted connections: 0.00%  (0/1127)
 [--] Query cache has been removed since MySQL 8.0
-[OK] Sorts requiring temporary tables: 0% (0 temp sorts / 80 sorts)
+[OK] Sorts requiring temporary tables: 0% (0 temp sorts / 88 sorts)
 [OK] No joins without indexes
-[OK] Temporary tables created on disk: 0% (0 on disk / 8K total)
-[OK] Thread cache hit rate: 93% (65 created / 1K connections)
+[OK] Temporary tables created on disk: 0% (0 on disk / 9K total)
+[OK] Thread cache hit rate: 94% (65 created / 1K connections)
 [OK] Table cache hit rate: 99% (4M hits / 4M requests)
 [OK] table_definition_cache (2000) is greater than number of tables (349)
 [OK] Open file limit used: 0% (1/10K)
-[OK] Table locks acquired immediately: 100% (62 immediate / 62 locks)
+[OK] Table locks acquired immediately: 100% (68 immediate / 68 locks)
  
 -------- Performance schema ------------------------------------------------------------------------
 [!!] Performance_schema should be activated.
@@ -75,12 +75,12 @@
 [--] InnoDB is enabled.
 [--] InnoDB Thread Concurrency: 0
 [OK] InnoDB File per table is activated
-[OK] InnoDB buffer pool / data size: 2.0G / 811.9M
+[OK] InnoDB buffer pool / data size: 2.0G / 811.0M
 [!!] Ratio InnoDB log file size / InnoDB Buffer pool size (4.6875%): 48.0M * 2 / 2.0G should be equal to 25%
 [!!] InnoDB buffer pool instances: 8
 [--] Number of InnoDB Buffer Pool Chunk: 16 for 8 Buffer Pool Instance(s)
 [OK] Innodb_buffer_pool_size aligned with Innodb_buffer_pool_chunk_size & Innodb_buffer_pool_instances
-[OK] InnoDB Read buffer efficiency: 99.99% (356016044 hits/ 356052185 total)
+[OK] InnoDB Read buffer efficiency: 99.99% (400219183 hits/ 400255340 total)
 [!!] InnoDB Write Log efficiency: 0% (0 hits/ 0 total)
 [OK] InnoDB log waits: 0% (0 waits / 0 writes)
  

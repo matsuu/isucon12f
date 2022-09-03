@@ -82,7 +82,7 @@ func main() {
 
 	h := &Handler{
 		DB:  nil,
-		DBs: make([]*sqlx.DB, 0),
+		DBs: make([]*sqlx.DB, 0, len(dbHosts)),
 		Redis: redis.NewClient(&redis.Options{
 			Addr: "127.0.0.1:6379",
 		}),
@@ -438,8 +438,8 @@ func (h *Handler) obtainLoginBonus(tx *sqlx.Tx, userID int64, requestAt int64) (
 	sendLoginBonuses := make([]*UserLoginBonus, 0)
 
 	obtainCoin := int64(0)
-	obtainCards := make([]*UserCard, 0)
-	obtainItems := make([]*UserItem, 0)
+	obtainCards := make([]*UserCard, 0, len(loginBonuses))
+	obtainItems := make([]*UserItem, 0, len(loginBonuses))
 
 	for _, bonus := range loginBonuses {
 		initBonus := false
@@ -1354,8 +1354,8 @@ func (h *Handler) receivePresent(c echo.Context) error {
 	}
 
 	obtainCoin := 0
-	obtainCards := make([]*UserCard, 0)
-	obtainItems := make([]*UserItem, 0)
+	obtainCards := make([]*UserCard, 0, len(obtainPresent))
+	obtainItems := make([]*UserItem, 0, len(obtainPresent))
 
 	// 配布処理
 	for i := range obtainPresent {
@@ -1676,7 +1676,7 @@ func (h *Handler) addExpToCard(c echo.Context) error {
 		}
 		return errorResponse(c, http.StatusInternalServerError, err)
 	}
-	resultItems := make([]*UserItem, 0)
+	resultItems := make([]*UserItem, 0, len(items))
 	for _, v := range items {
 		resultItems = append(resultItems, &UserItem{
 			ID:        v.ID,
